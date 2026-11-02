@@ -1,7 +1,14 @@
 import { eq } from 'drizzle-orm';
-import { db, departments, members, profiles } from '@felege-yordanos/db/server';
+import {
+  db,
+  departments,
+  members,
+  preMembers,
+  profiles,
+} from '@felege-yordanos/db/server';
 import { PageHead } from '@/components/ds';
 import { requireUser } from '@/lib/session';
+import { PreMemberDetailsForm } from './pre-member-details-form';
 import { ProfileForm } from './profile-form';
 
 export default async function ProfilePage() {
@@ -28,6 +35,16 @@ export default async function ProfilePage() {
       .limit(1),
   ]);
 
+  // An active pre-member: their record (ID, QR and editable details).
+  const [pre] =
+    !member && user.access === 'pre_member' && user.preMemberRecordId !== null
+      ? await db
+          .select()
+          .from(preMembers)
+          .where(eq(preMembers.id, user.preMemberRecordId))
+          .limit(1)
+      : [];
+
   let deptName: string | null = null;
   if (user.departmentId != null) {
     const [dept] = await db
@@ -46,9 +63,34 @@ export default async function ProfilePage() {
         email={user.email}
         displayName={profile?.displayName ?? ''}
         role={user.role}
-        member={member ?? null}
+        member={
+          member ??
+          (pre?.code
+            ? {
+                memberId: pre.code,
+                name: pre.name,
+                fatherName: pre.fatherName,
+                grandfatherName: pre.grandfatherName,
+                gender: null,
+                addressPhone: pre.phone,
+              }
+            : null)
+        }
+        preMember={!member && !!pre}
         deptName={deptName}
       />
+      {pre && (
+        <PreMemberDetailsForm
+          initial={{
+            name: pre.name,
+            fatherName: pre.fatherName,
+            grandfatherName: pre.grandfatherName,
+            // Walk-ins registered without an email: suggest the account's.
+            email: pre.email ?? user.email,
+            phone: pre.phone ?? '',
+          }}
+        />
+      )}
     </div>
   );
 }

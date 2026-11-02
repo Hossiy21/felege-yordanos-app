@@ -18,12 +18,19 @@ interface SidebarNavProps {
   displayName: string;
   /** Admin pages this user may open. */
   adminHrefs: string[];
+  /** Pre-member: no Donate item. */
+  preMember?: boolean;
 }
 
 /** Desktop left rail. Hidden on mobile, where the bottom nav takes over. */
-export function SidebarNav({ role, displayName, adminHrefs }: SidebarNavProps) {
+export function SidebarNav({
+  role,
+  displayName,
+  adminHrefs,
+  preMember = false,
+}: SidebarNavProps) {
   const { collapsed, toggle } = useSidebar();
-  const { member, admin } = navFor(adminHrefs);
+  const { member, admin } = navFor(adminHrefs, preMember);
   const router = useRouter();
   const t = useT();
 

@@ -6,6 +6,8 @@ export interface Email {
   subject: string;
   text: string;
   html?: string;
+  /** Inline images, referenced in the HTML as src="cid:<cid>". */
+  attachments?: { filename: string; content: Buffer; cid: string }[];
 }
 
 /**
@@ -77,7 +79,7 @@ function smtp() {
 export async function sendEmail(email: Email): Promise<void> {
   if (transportName() === 'console') {
     console.log(
-      `\n──── Email (not sent, EMAIL_TRANSPORT=console) ────\nTo: ${email.to}\nSubject: ${email.subject}\n\n${email.text}\n───────────────────────────────\n`,
+      `\n──── Email (not sent, EMAIL_TRANSPORT=console) ────\nTo: ${email.to}\nSubject: ${email.subject}\n\n${email.text}\n${(email.attachments ?? []).map((a) => `[image ${a.filename}]\n`).join('')}───────────────────────────────\n`,
     );
     return;
   }

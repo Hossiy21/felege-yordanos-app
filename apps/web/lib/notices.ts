@@ -6,7 +6,7 @@
  * members for all of 20 Oct.
  */
 
-import type { NoticeCategory } from '@felege-yordanos/db/schema';
+import type { Audience, NoticeCategory } from '@felege-yordanos/db/schema';
 
 export const NOTICE_TITLE_MAX = 120;
 export const NOTICE_SUMMARY_MAX = 160;
@@ -36,6 +36,8 @@ export interface NoticeView {
   body: string;
   category: NoticeCategory;
   departmentId: number | null;
+  /** Who sees it: members, pre-members or everyone. */
+  audience: Audience;
   departmentNameEn: string | null;
   departmentNameAm: string | null;
   imageKey: string | null;

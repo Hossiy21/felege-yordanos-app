@@ -19,8 +19,9 @@ const event = {
 const eat = (hhmm: string) => new Date(`2026-10-11T${hhmm}+03:00`);
 
 const members = [1, 2, 3, 4, 5, 6].map((id) => ({
-  id,
-  memberId: `ssu/01/03/05/0000${id}`,
+  key: `m:${id}`,
+  kind: 'member' as const,
+  code: `ssu/01/03/05/0000${id}`,
   name: `Name${id}`,
   fatherName: 'Father',
 }));
@@ -32,7 +33,7 @@ const row = (
   method: SummaryRowInput['method'] = 'qr',
   by = 'v1',
 ): SummaryRowInput => ({
-  memberId,
+  key: `m:${memberId}`,
   status,
   checkedInAt: at ? eat(at) : null,
   method,
@@ -61,7 +62,7 @@ describe('computeEventSummary', () => {
     assert.equal(s.attendedPct, 67);
     assert.equal(s.avgLateMin, 7);
 
-    const byId = new Map(s.records.map((r) => [r.id, r]));
+    const byId = new Map(s.records.map((r) => [Number(r.key.slice(2)), r]));
     assert.equal(byId.get(2)?.status, 'on_time');
     assert.equal(byId.get(2)?.minutesVsStart, 0);
     assert.equal(byId.get(3)?.status, 'late');
@@ -82,8 +83,8 @@ describe('computeEventSummary', () => {
       row(2, 'present', '15:30'),
     ]);
     assert.deepEqual(
-      s.records.map((r) => r.id),
-      [1, 2, 3, 4, 5, 6],
+      s.records.map((r) => r.key),
+      ['m:1', 'm:2', 'm:3', 'm:4', 'm:5', 'm:6'],
     );
     assert.equal(s.first?.name, 'Name1 Father');
     assert.equal(s.last?.name, 'Name3 Father');
@@ -106,7 +107,7 @@ describe('computeEventSummary', () => {
     // Members without any row count as absent (no source).
     assert.equal(s.absent, 3);
     assert.equal(s.absentOnClose, 3);
-    assert.equal(s.records.find((r) => r.id === 4)?.absentSource, 'none');
+    assert.equal(s.records.find((r) => r.key === 'm:4')?.absentSource, 'none');
     assert.deepEqual(
       s.records.map((r) => r.status),
       ['late', 'no_time', 'no_time', 'absent', 'absent', 'absent'],
@@ -143,6 +144,45 @@ describe('computeEventSummary', () => {
     const none = computeEventSummary(event, [], []);
     assert.equal(none.total, 0);
     assert.equal(none.attendedPct, 0);
+  });
+});
+
+describe('members and pre-members', () => {
+  it('counts each kind apart, keys never collide', () => {
+    const pre = [1, 2].map((id) => ({
+      key: `p:${id}`,
+      kind: 'pre_member' as const,
+      code: `FYP-2019-000${id}`,
+      name: `Pre${id}`,
+      fatherName: 'Father',
+    }));
+    const s = computeEventSummary(
+      event,
+      [...members.slice(0, 2), ...pre],
+      [
+        row(1, 'present', '15:20'),
+        { ...row(1, 'present', '15:40'), key: 'p:1' },
+        { ...row(2, 'absent', null, 'auto_close'), key: 'p:2' },
+      ],
+    );
+    assert.equal(s.total, 4);
+    assert.equal(s.attended, 2);
+    assert.deepEqual(
+      s.groups.map((g) => [g.kind, g.total, g.attended, g.late, g.absent]),
+      [
+        ['member', 2, 1, 0, 1],
+        ['pre_member', 2, 1, 1, 1],
+      ],
+    );
+    assert.equal(s.records.find((r) => r.key === 'p:1')?.memberId, 'FYP-2019-0001');
+  });
+
+  it('has one group for a members-only event', () => {
+    const s = computeEventSummary(event, members, []);
+    assert.deepEqual(
+      s.groups.map((g) => g.kind),
+      ['member'],
+    );
   });
 });
 

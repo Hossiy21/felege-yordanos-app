@@ -5,6 +5,7 @@ import {
   db,
   memberLinkRequests,
   members,
+  preMembers,
   profiles,
 } from '@felege-yordanos/db/server';
 import { Card, PageHead } from '@/components/ds';
@@ -69,9 +70,16 @@ export default async function MemberLinksPage() {
         grandfatherName: members.grandfatherName,
         phone: members.addressPhone,
         gender: members.gender,
+        // Requests for a pre-member record (I am a ቅድመ አባል).
+        preCode: preMembers.code,
+        preName: preMembers.name,
+        preFatherName: preMembers.fatherName,
+        preGrandfatherName: preMembers.grandfatherName,
+        prePhone: preMembers.phone,
       })
       .from(memberLinkRequests)
-      .innerJoin(members, eq(members.id, memberLinkRequests.memberId))
+      .leftJoin(members, eq(members.id, memberLinkRequests.memberId))
+      .leftJoin(preMembers, eq(preMembers.id, memberLinkRequests.preMemberId))
       .innerJoin(authUsers, eq(authUsers.id, memberLinkRequests.userId))
       .leftJoin(profiles, eq(profiles.id, memberLinkRequests.userId))
       .where(eq(memberLinkRequests.status, 'pending'))
@@ -86,7 +94,10 @@ export default async function MemberLinksPage() {
       .from(profiles)
       .innerJoin(authUsers, eq(authUsers.id, profiles.id))
       .leftJoin(members, eq(members.authUserId, profiles.id))
-      .where(and(isNull(members.id), notExists(pendingRequest)))
+      .leftJoin(preMembers, eq(preMembers.authUserId, profiles.id))
+      .where(
+        and(isNull(members.id), isNull(preMembers.id), notExists(pendingRequest)),
+      )
       .orderBy(desc(authUsers.createdAt))
       .limit(300),
     db
@@ -112,17 +123,27 @@ export default async function MemberLinksPage() {
         sub="Confirm which account belongs to which member"
       />
       <MemberLinks
-        pending={pendingRows.map((r) => ({
-          requestId: r.requestId,
-          requestedAt: r.requestedAt?.toISOString() ?? '',
-          userId: r.userId,
-          accountName: r.accountName,
-          email: r.email,
-          memberId: r.memberId,
-          memberName: fullName(r),
-          phoneLast4: last4(r.phone),
-          gender: r.gender,
-        }))}
+        pending={pendingRows.map((r) => {
+          const preMember = r.preCode !== null;
+          return {
+            requestId: r.requestId,
+            requestedAt: r.requestedAt?.toISOString() ?? '',
+            userId: r.userId,
+            accountName: r.accountName,
+            email: r.email,
+            memberId: (preMember ? r.preCode : r.memberId) ?? '',
+            memberName: preMember
+              ? fullName({
+                  name: r.preName,
+                  fatherName: r.preFatherName,
+                  grandfatherName: r.preGrandfatherName,
+                })
+              : fullName(r),
+            phoneLast4: last4(preMember ? r.prePhone : r.phone),
+            gender: r.gender,
+            preMember,
+          };
+        })}
         unlinked={unlinkedRows.map((r) => ({
           userId: r.userId,
           accountName: r.accountName,

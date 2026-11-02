@@ -10,6 +10,7 @@ import { mediaUrl } from '@/lib/media';
 import type { NoticeView } from '@/lib/notices';
 import { NoticeCategoryChip } from './notice-category';
 import { cn } from '@/lib/utils';
+import { AudienceTag } from '@/components/forms/audience-tag';
 
 /** Long messages start collapsed, with "Read full notice". */
 const isLong = (body: string) =>
@@ -91,14 +92,18 @@ export function NoticeCard({
               {featured ? t('Pinned notice') : t('Pinned')}
             </span>
           )}
-          <span
-            className={cn(
-              'inline-flex items-center rounded-full bg-brand/[0.08] px-2 py-[3px] text-[10.5px] font-medium text-brand dark:bg-gold/[0.12] dark:text-gold-light',
-              locale === 'am' && 'font-ethiopic',
-            )}
-          >
-            {department(notice)}
-          </span>
+          {/* "Everyone" (no department) next to an audience tag would contradict it. */}
+          {(notice.departmentId !== null || notice.audience === 'members') && (
+            <span
+              className={cn(
+                'inline-flex items-center rounded-full bg-brand/[0.08] px-2 py-[3px] text-[10.5px] font-medium text-brand dark:bg-gold/[0.12] dark:text-gold-light',
+                locale === 'am' && 'font-ethiopic',
+              )}
+            >
+              {department(notice)}
+            </span>
+          )}
+          <AudienceTag audience={notice.audience} />
           {notice.expired && <StatusPill tone="neutral">{t('Expired')}</StatusPill>}
           <span className="ml-auto font-mono text-[10.5px] text-ink-muted">
             {date(notice.createdAt)}

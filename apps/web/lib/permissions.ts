@@ -13,6 +13,7 @@ import {
   eventStartAt,
   type CheckInWindowEvent,
 } from './check-in-window';
+import type { Audience } from '@felege-yordanos/db/schema';
 import { isAudioKey, isNoticeImageKey } from './media';
 import type { CurrentUser } from './session';
 
@@ -55,6 +56,57 @@ export const hasMemberAccess = (
   u: Pick<CurrentUser, 'emailVerified' | 'role' | 'memberRecordId'>,
 ) => u.emailVerified && (u.role !== 'member' || u.memberRecordId !== null);
 
+/**
+ * Pre-member features (events and notices for pre-members, their own
+ * attendance, their ID and QR): a verified email and a linked pre-member
+ * record with status 'active' (lib/session.ts sets preMemberRecordId only
+ * then). Members' features stay refused: hasMemberAccess is false for them.
+ */
+export const hasPreMemberAccess = (
+  u: Pick<CurrentUser, 'emailVerified' | 'preMemberRecordId'>,
+) => u.emailVerified && u.preMemberRecordId !== null;
+
+/** What the app shows a user (CurrentUser.access). */
+export type AccessLevel = 'guest' | 'pre_member' | 'member' | 'staff';
+
+type AccessUser = Pick<
+  CurrentUser,
+  'emailVerified' | 'role' | 'memberRecordId' | 'preMemberRecordId'
+>;
+
+export function accessLevel(u: AccessUser): AccessLevel {
+  if (u.emailVerified && u.role !== 'member') return 'staff';
+  if (hasMemberAccess(u)) return 'member';
+  if (hasPreMemberAccess(u)) return 'pre_member';
+  return 'guest';
+}
+
+/* ─── Audience (events and notices) ────────────────────────── */
+
+/**
+ * Audiences whose events and notices this user sees: staff all (null),
+ * members 'members' + 'everyone', pre-members 'pre_members' + 'everyone',
+ * anyone else none.
+ */
+export function visibleAudiences(u: AccessUser): Audience[] | null {
+  switch (accessLevel(u)) {
+    case 'staff':
+      return null;
+    case 'member':
+      return ['members', 'everyone'];
+    case 'pre_member':
+      return ['pre_members', 'everyone'];
+    default:
+      return [];
+  }
+}
+
+/** Whether this user sees an event or notice meant for `audience`. */
+export const canSeeAudience = (u: AccessUser, audience: Audience) => {
+  const visible = visibleAudiences(u);
+  return visible === null || visible.includes(audience);
+};
+
 /* ─── Songbook ─────────────────────────────────────────────── */
 
 /** Read the songbook and play song recordings: every signed-in user. */
@@ -67,10 +119,20 @@ export const canManageSongs = (u: User) =>
 /* ─── Notices ──────────────────────────────────────────────── */
 
 type MemberAccessUser = User &
-  Pick<CurrentUser, 'emailVerified' | 'memberRecordId'>;
+  Pick<CurrentUser, 'emailVerified' | 'memberRecordId' | 'preMemberRecordId'>;
 
-/** Read the notice board: same people as the other member features. */
-export const canViewNotices = (u: MemberAccessUser) => hasMemberAccess(u);
+/**
+ * Read the notice board: members (and staff) and pre-members. Which notices
+ * each sees: canViewNotice.
+ */
+export const canViewNotices = (u: MemberAccessUser) =>
+  hasMemberAccess(u) || hasPreMemberAccess(u);
+
+/** Read one notice: the notice board, and the notice is for this user. */
+export const canViewNotice = (
+  u: MemberAccessUser,
+  notice: { audience: Audience },
+) => canViewNotices(u) && canSeeAudience(u, notice.audience);
 
 /** Staff also see expired notices (members only see active ones). */
 export const canSeeExpiredNotices = (u: User) => canAccessAdmin(u);
@@ -106,6 +168,17 @@ export const canViewMedia = (u: MemberAccessUser, key: string) =>
   (isNoticeImageKey(key) && canViewNotices(u));
 
 /* ─── Events ───────────────────────────────────────────────── */
+
+/**
+ * See an event in the member area (dashboard, /attendance): members and
+ * pre-members for their audience, staff all.
+ */
+export const canViewEvent = (
+  u: MemberAccessUser,
+  event: { audience: Audience },
+) =>
+  (hasMemberAccess(u) || hasPreMemberAccess(u)) &&
+  canSeeAudience(u, event.audience);
 
 /**
  * Create, edit and delete events of any department (and general events):
@@ -235,3 +308,17 @@ export const canEditMembers = (u: User) => isAdmin(u);
  * record directly. Member ids are sequential, so an admin always confirms.
  */
 export const canApproveMemberLinks = (u: User) => isAdmin(u);
+
+/* ─── Pre-members ──────────────────────────────────────────── */
+
+/**
+ * Pre-member records: list, register, approve, reject, edit, withdraw,
+ * reinstate, link accounts, see the history. Admins and super admins only.
+ */
+export const canManagePreMembers = (u: User) => isAdmin(u);
+
+/** Open and close self-registration sessions (/join QR). */
+export const canManageRegistrationSessions = (u: User) => isAdmin(u);
+
+/** Promote a pre-member to member, and undo a promotion. */
+export const canPromotePreMembers = (u: User) => isAdmin(u);

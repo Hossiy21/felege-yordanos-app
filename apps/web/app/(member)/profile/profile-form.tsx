@@ -15,6 +15,7 @@ import type { Locale } from '@/lib/i18n/config';
 import { cn } from '@/lib/utils';
 import { initialsOf, RolePill } from '@/components/role-pill';
 import { MemberQRCard } from './member-qr-card';
+import { PreMemberBadge } from '@/components/pre-members/pre-member-badge';
 import { updateDisplayName } from './actions';
 
 type Member = typeof members.$inferSelect;
@@ -37,6 +38,8 @@ interface ProfileFormProps {
   member: LinkedMember | null;
   /** Department display name (Amharic) for the desktop info card. */
   deptName?: string | null;
+  /** `member` is the linked pre-member record (FYP code): plum QR card. */
+  preMember?: boolean;
 }
 
 const LABEL =
@@ -65,7 +68,9 @@ export function ProfileForm({
   role,
   member,
   deptName,
+  preMember = false,
 }: ProfileFormProps) {
+  const qrVariant = preMember ? 'pre_member' : 'member';
   const [name, setName] = useState(displayName);
   const [saving, setSaving] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
@@ -159,16 +164,24 @@ export function ProfileForm({
             <div className="mt-0.5 truncate text-[11.5px] text-ink-muted">
               {email}
             </div>
-            <RolePill
-              role={role}
-              t={t}
-              variant="list"
-              className="mt-1.5 px-2 py-0.5 text-[9px] tracking-[0.06em]"
-            />
+            {preMember ? (
+              <PreMemberBadge className="mt-1.5" />
+            ) : (
+              <RolePill
+                role={role}
+                t={t}
+                variant="list"
+                className="mt-1.5 px-2 py-0.5 text-[9px] tracking-[0.06em]"
+              />
+            )}
           </div>
         </div>
 
-        {member ? <MemberQRCard memberId={member.memberId} /> : claimPrompt}
+        {member ? (
+          <MemberQRCard memberId={member.memberId} variant={qrVariant} />
+        ) : (
+          claimPrompt
+        )}
 
         {/* Account */}
         <section>
@@ -191,7 +204,8 @@ export function ProfileForm({
             {member && (
               <div className="mt-3 border-t border-parchment-edge pt-3">
                 <div className={cn(LABEL, 'mb-1 text-[9.5px]')}>
-                  {t('Member record')} · {t('linked')}
+                  {t(preMember ? 'Pre-member record' : 'Member record')} ·{' '}
+                  {t('linked')}
                 </div>
                 <div className="flex items-center gap-2">
                   <span className="rounded bg-brand/[0.08] px-2 py-0.5 font-mono text-[11px] font-semibold text-brand dark:bg-gold/10 dark:text-gold-light">
@@ -260,6 +274,8 @@ export function ProfileForm({
                   <span className="font-ethiopic text-[11px] text-ink-muted">
                     {deptName}
                   </span>
+                ) : preMember ? (
+                  <PreMemberBadge />
                 ) : (
                   <RolePill role={role} t={t} />
                 )}
@@ -328,7 +344,11 @@ export function ProfileForm({
           {member ? (
             <>
               <div className="mx-auto mt-4 w-fit rounded-[14px] border border-parchment-edge bg-parchment-soft p-3 shadow-[0_8px_20px_-12px_rgba(10,60,54,0.35)] dark:bg-cream">
-                <MemberQR value={member.memberId} size={168} />
+                <MemberQR
+                  value={member.memberId}
+                  size={168}
+                  variant={qrVariant}
+                />
               </div>
               <div className="mt-3 font-mono text-[13px] tracking-[0.08em] text-ink">
                 {member.memberId}

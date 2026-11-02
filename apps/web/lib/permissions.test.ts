@@ -1,7 +1,14 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import {
+  accessLevel,
   canCloseEvent,
+  canManagePreMembers,
+  canSeeAudience,
+  canViewEvent,
+  canViewNotices,
+  hasMemberAccess,
+  hasPreMemberAccess,
   canReopenEvent,
   canViewEventSummary,
   closableFrom,
@@ -59,5 +66,58 @@ describe('canReopenEvent / canViewEventSummary', () => {
     assert.equal(canViewEventSummary(head, event), true);
     assert.equal(canViewEventSummary(programsHead, event), true);
     assert.equal(canViewEventSummary(otherHead, event), false);
+  });
+});
+
+describe('pre-member access', () => {
+  const base = {
+    id: 'u',
+    departmentId: null,
+    emailVerified: true,
+    memberRecordId: null,
+    preMemberRecordId: null,
+  };
+  const guest = { ...base, role: 'member' as const };
+  const linkedMember = { ...guest, memberRecordId: 12 };
+  const preMember = { ...guest, preMemberRecordId: 3 };
+  const unverifiedPre = { ...preMember, emailVerified: false };
+  const staff = { ...base, role: 'admin' as const };
+
+  it('derives the access level', () => {
+    assert.equal(accessLevel(guest), 'guest');
+    assert.equal(accessLevel(linkedMember), 'member');
+    assert.equal(accessLevel(preMember), 'pre_member');
+    assert.equal(accessLevel(unverifiedPre), 'guest');
+    assert.equal(accessLevel(staff), 'staff');
+  });
+
+  it('never gives pre-members member access', () => {
+    assert.equal(hasMemberAccess(preMember), false);
+    assert.equal(hasPreMemberAccess(preMember), true);
+    assert.equal(hasPreMemberAccess(unverifiedPre), false);
+    assert.equal(canViewNotices(preMember), true);
+    assert.equal(canViewNotices(guest), false);
+  });
+
+  it('shows events and notices by audience', () => {
+    const ev = (audience: 'members' | 'pre_members' | 'everyone') => ({
+      audience,
+    });
+    assert.equal(canViewEvent(linkedMember, ev('members')), true);
+    assert.equal(canViewEvent(linkedMember, ev('everyone')), true);
+    assert.equal(canViewEvent(linkedMember, ev('pre_members')), false);
+    assert.equal(canViewEvent(preMember, ev('members')), false);
+    assert.equal(canViewEvent(preMember, ev('pre_members')), true);
+    assert.equal(canViewEvent(preMember, ev('everyone')), true);
+    assert.equal(canViewEvent(guest, ev('everyone')), false);
+    assert.equal(canSeeAudience(staff, 'pre_members'), true);
+    assert.equal(canSeeAudience(staff, 'members'), true);
+  });
+
+  it('lets only admins manage pre-members', () => {
+    assert.equal(canManagePreMembers(admin), true);
+    assert.equal(canManagePreMembers(head), false);
+    assert.equal(canManagePreMembers(programsHead), false);
+    assert.equal(canManagePreMembers(member), false);
   });
 });

@@ -9,6 +9,7 @@ import {
   Megaphone,
   Music,
   Shield,
+  User,
 } from 'lucide-react';
 import type { Role as UserRole } from '@felege-yordanos/db/schema';
 import { useLocale } from '@/lib/i18n/client';
@@ -25,16 +26,25 @@ const MEMBER_LINKS = [
 
 /**
  * Mobile bottom nav: a floating pill. 5th tab: Admin for elevated roles,
- * Donate otherwise. AppShell pads <main> so the pill never covers content.
+ * Profile (their QR) for pre-members, Donate otherwise. AppShell pads <main>
+ * so the pill never covers content.
  */
-export function BottomNav({ role }: { role: UserRole }) {
+export function BottomNav({
+  role,
+  preMember = false,
+}: {
+  role: UserRole;
+  preMember?: boolean;
+}) {
   const pathname = usePathname();
   const locale = useLocale();
   const links = [
     ...MEMBER_LINKS,
     isElevated(role)
       ? { href: '/admin', icon: Shield, label: 'Admin', am: 'አስተዳዳሪ' }
-      : { href: '/donate', icon: Heart, label: 'Donate', am: 'መዋጮ' },
+      : preMember
+        ? { href: '/profile', icon: User, label: 'Profile', am: 'መገለጫ' }
+        : { href: '/donate', icon: Heart, label: 'Donate', am: 'መዋጮ' },
   ];
 
   return (

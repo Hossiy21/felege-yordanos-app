@@ -9,9 +9,20 @@ import { cache } from 'react';
 import { eq } from 'drizzle-orm';
 import { headers } from 'next/headers';
 import { redirect } from 'next/navigation';
-import { db, members, profiles, type Role } from '@felege-yordanos/db/server';
+import {
+  db,
+  members,
+  preMembers,
+  profiles,
+  type Role,
+} from '@felege-yordanos/db/server';
 import { auth } from './auth';
-import { hasMemberAccess } from './permissions';
+import {
+  accessLevel,
+  hasMemberAccess,
+  hasPreMemberAccess,
+  type AccessLevel,
+} from './permissions';
 
 export const getSession = cache(async () =>
   auth.api.getSession({ headers: await headers() }),
@@ -37,6 +48,17 @@ export type CurrentUser = {
   emailVerified: boolean;
   /** members.id of the linked member record, or null when not linked yet. */
   memberRecordId: number | null;
+  /**
+   * pre_members.id of the linked pre-member record while it is active, else
+   * null (pending, withdrawn or promoted records give no access).
+   */
+  preMemberRecordId: number | null;
+  /**
+   * What the app shows this user: 'staff' (any staff role), 'member'
+   * (hasMemberAccess), 'pre_member' (hasPreMemberAccess) or 'guest'
+   * (songbook and profile only). Derived from the fields above.
+   */
+  access: AccessLevel;
 };
 
 /** The signed-in user with their profile, or null when signed out. */
@@ -50,9 +72,14 @@ export const getCurrentUser = cache(async (): Promise<CurrentUser | null> => {
       memberRecordId: members.id,
       memberName: members.name,
       memberFatherName: members.fatherName,
+      preMemberId: preMembers.id,
+      preMemberStatus: preMembers.status,
+      preMemberName: preMembers.name,
+      preMemberFatherName: preMembers.fatherName,
     })
     .from(profiles)
     .leftJoin(members, eq(members.authUserId, profiles.id))
+    .leftJoin(preMembers, eq(preMembers.authUserId, profiles.id))
     .where(eq(profiles.id, session.user.id))
     .limit(1);
   const profile = row?.profile;
@@ -69,6 +96,14 @@ export const getCurrentUser = cache(async (): Promise<CurrentUser | null> => {
   const memberName = [row?.memberName, row?.memberFatherName]
     .filter(Boolean)
     .join(' ');
+  const preMemberActive = row?.preMemberStatus === 'active';
+  const preMemberName = preMemberActive
+    ? [row?.preMemberName, row?.preMemberFatherName].filter(Boolean).join(' ')
+    : '';
+
+  const role = emailVerified ? assignedRole : 'member';
+  const memberRecordId = row?.memberRecordId ?? null;
+  const preMemberRecordId = preMemberActive ? (row?.preMemberId ?? null) : null;
 
   return {
     id: session.user.id,
@@ -78,13 +113,21 @@ export const getCurrentUser = cache(async (): Promise<CurrentUser | null> => {
     displayName:
       realName(profile?.displayName) ||
       memberName ||
+      preMemberName ||
       realName(session.user.name) ||
       email,
-    role: emailVerified ? assignedRole : 'member',
+    role,
     departmentId: emailVerified ? (profile?.departmentId ?? null) : null,
     assignedRole,
     emailVerified,
-    memberRecordId: row?.memberRecordId ?? null,
+    memberRecordId,
+    preMemberRecordId,
+    access: accessLevel({
+      emailVerified,
+      role,
+      memberRecordId,
+      preMemberRecordId,
+    }),
   };
 });
 
@@ -119,7 +162,20 @@ export async function requireVerifiedEmail(): Promise<CurrentUser> {
  */
 export async function requireLinkedMember(): Promise<CurrentUser> {
   const user = await requireVerifiedEmail();
-  if (!hasMemberAccess(user)) redirect('/claim?required=1');
+  if (hasMemberAccess(user)) return user;
+  // Pre-members are linked already: this feature is not for them.
+  if (hasPreMemberAccess(user)) redirect('/dashboard');
+  redirect('/claim?required=1');
+}
+
+/**
+ * For the features members and pre-members share (events of their audience,
+ * their attendance, notices): member access or an active pre-member record.
+ */
+export async function requireMemberOrPreMember(): Promise<CurrentUser> {
+  const user = await requireVerifiedEmail();
+  if (!hasMemberAccess(user) && !hasPreMemberAccess(user))
+    redirect('/claim?required=1');
   return user;
 }
 
@@ -127,4 +183,4 @@ export async function requireLinkedMember(): Promise<CurrentUser> {
  * Verified email, and a linked member or a staff role. Same rule for pages
  * and server actions (defined in lib/permissions.ts).
  */
-export { hasMemberAccess } from './permissions';
+export { hasMemberAccess, hasPreMemberAccess } from './permissions';

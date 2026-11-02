@@ -14,6 +14,7 @@ import { MemberQR } from '@/components/member-qr';
 import { useLocale, useT } from '@/lib/i18n/client';
 import { formatYmd, parseYmd } from '@/lib/events';
 import { cn } from '@/lib/utils';
+import { PreMemberBadge } from '@/components/pre-members/pre-member-badge';
 import {
   EventsCalendar,
   type CalEvent,
@@ -52,7 +53,9 @@ interface AttendanceViewProps {
   /** Most recent first; an upcoming next event may lead the list. */
   rows: AttnRow[];
   nextEvent: NextEvent | null;
+  /** SSU member ID, or the FYP code when `preMember`. */
   memberId: string | null;
+  preMember?: boolean;
 }
 
 const STATUS_COLOR: Record<AttnStatus, string> = {
@@ -68,6 +71,7 @@ export function AttendanceView({
   rows,
   nextEvent,
   memberId,
+  preMember = false,
 }: AttendanceViewProps) {
   const t = useT();
   const locale = useLocale();
@@ -379,10 +383,15 @@ export function AttendanceView({
               </DialogClose>
             </div>
             <div className="mx-auto mt-4 w-fit rounded-xl border border-parchment-edge bg-parchment-soft p-3 shadow-[0_8px_20px_-12px_rgba(12,69,61,0.35)]">
-              <MemberQR value={memberId} size={196} />
+              <MemberQR
+                value={memberId}
+                size={196}
+                variant={preMember ? 'pre_member' : 'member'}
+              />
             </div>
-            <div className="mt-3 font-mono text-[13px] tracking-[0.08em] text-ink">
+            <div className="mt-3 flex items-center justify-center gap-2 font-mono text-[13px] tracking-[0.08em] text-ink">
               {memberId}
+              {preMember && <PreMemberBadge />}
             </div>
             <DialogDescription className="mt-1.5 text-[11.5px] leading-relaxed text-ink-muted">
               {t('Show this code at the door to check in.')}

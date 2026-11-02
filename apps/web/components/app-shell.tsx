@@ -11,6 +11,8 @@ interface AppShellProps {
   email: string;
   /** Admin pages this user may open (adminHrefsFor, computed on the server). */
   adminHrefs: string[];
+  /** Pre-member (CurrentUser.access): no Donate in the menus. */
+  preMember?: boolean;
   children: React.ReactNode;
 }
 
@@ -23,6 +25,7 @@ export function AppShell({
   displayName,
   email,
   adminHrefs,
+  preMember = false,
   children,
 }: AppShellProps) {
   return (
@@ -34,6 +37,7 @@ export function AppShell({
           role={role}
           displayName={displayName}
           adminHrefs={adminHrefs}
+          preMember={preMember}
         />
         {/* The page glow sits behind both the top bar and the content, so
             the transparent top bar blends into the page. */}
@@ -46,7 +50,7 @@ export function AppShell({
           </main>
         </div>
       </div>
-      <BottomNav role={role} />
+      <BottomNav role={role} preMember={preMember} />
     </SidebarProvider>
   );
 }

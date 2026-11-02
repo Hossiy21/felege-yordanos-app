@@ -3,10 +3,19 @@
 import { useEffect, useId, useRef, useState } from 'react';
 import { Camera, Check, Info, ScanLine, X } from 'lucide-react';
 import { useT } from '@/lib/i18n/client';
+import { PreMemberBadge } from '@/components/pre-members/pre-member-badge';
 
 export type ScanResult =
-  | { kind: 'success'; name: string; memberId: string; time: string }
-  | { kind: 'already'; name: string; memberId: string }
+  | {
+      kind: 'success';
+      name: string;
+      memberId: string;
+      time: string;
+      preMember?: boolean;
+    }
+  | { kind: 'already'; name: string; memberId: string; preMember?: boolean }
+  /** A real ID that may not check in here (message in English). */
+  | { kind: 'refused'; code: string; message: string; preMember: boolean }
   | { kind: 'invalid'; code: string };
 
 interface QRScannerProps {
@@ -382,6 +391,7 @@ function ScanFeedbackBanner({ result }: { result: ScanResult }) {
           <div className="mt-0.5 flex items-center gap-1.5 text-[11px] font-semibold text-status-present">
             <ScanLine className="h-2.5 w-2.5" />
             {t('Checked in')} · {result.memberId}
+            {result.preMember && <PreMemberBadge />}
           </div>
         </div>
         <div className="shrink-0 font-mono text-[10px] font-semibold text-status-present">
@@ -400,8 +410,27 @@ function ScanFeedbackBanner({ result }: { result: ScanResult }) {
           <div className="truncate font-display text-base font-medium leading-tight text-brand-ink">
             {result.name}
           </div>
-          <div className="mt-0.5 text-[11px] font-semibold text-status-late">
+          <div className="mt-0.5 flex items-center gap-1.5 text-[11px] font-semibold text-status-late">
             {t('Already marked present')} · {result.memberId}
+            {result.preMember && <PreMemberBadge />}
+          </div>
+        </div>
+      </div>
+    );
+  }
+  if (result.kind === 'refused') {
+    return (
+      <div className="mt-3 flex items-center gap-3 rounded-[14px] border border-status-absent/40 bg-status-absent-bg px-4 py-3">
+        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-status-absent">
+          <X className="h-[22px] w-[22px] text-cream" strokeWidth={3} />
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="font-display text-base font-medium leading-tight text-brand-ink">
+            {t(result.message)}
+          </div>
+          <div className="mt-0.5 flex items-center gap-1.5 truncate font-mono text-[11px] font-medium text-status-absent">
+            {result.code.slice(0, 32)}
+            {result.preMember && <PreMemberBadge />}
           </div>
         </div>
       </div>

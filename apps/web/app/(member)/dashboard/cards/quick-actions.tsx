@@ -1,13 +1,22 @@
 import Link from 'next/link';
-import { ArrowRight, CalendarCheck, Heart, Music } from 'lucide-react';
+import { ArrowRight, CalendarCheck, Heart, Megaphone, Music } from 'lucide-react';
 import { SectionHeader } from '@/components/ds';
 import { getLocale, getT } from '@/lib/i18n/server';
 import { bilingual } from '@/lib/i18n/translate';
 import { cn } from '@/lib/utils';
 import { formatNumber } from '../format';
 
-/** Phone-only quick action tiles. */
-export async function QuickActions({ songCount }: { songCount: number }) {
+/**
+ * Phone-only quick action tiles. Pre-members get Notices instead of Donate
+ * (donations are for members).
+ */
+export async function QuickActions({
+  songCount,
+  preMember = false,
+}: {
+  songCount: number;
+  preMember?: boolean;
+}) {
   const [t, locale] = await Promise.all([getT(), getLocale()]);
   const am = locale === 'am';
   const songbook = bilingual(locale, 'Songbook', 'መዝሙር');
@@ -17,7 +26,13 @@ export async function QuickActions({ songCount }: { songCount: number }) {
       icon: CalendarCheck,
       ...bilingual(locale, 'Attendance', 'ክትትል'),
     },
-    { href: '/donate', icon: Heart, ...bilingual(locale, 'Donate', 'መዋጮ') },
+    preMember
+      ? {
+          href: '/notices',
+          icon: Megaphone,
+          ...bilingual(locale, 'Notices', 'ማስታወቂያ'),
+        }
+      : { href: '/donate', icon: Heart, ...bilingual(locale, 'Donate', 'መዋጮ') },
   ];
 
   return (

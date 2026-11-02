@@ -1,5 +1,5 @@
 {
-  "id": "5dd14649-d038-4709-a5b8-af84a3bb7529",
+  "id": "decf4a4f-44ec-4f98-81ba-8cc8307e5a80",
   "prevId": "4b4916c3-023c-4f59-ac00-6909606775b4",
   "version": "7",
   "dialect": "postgresql",
@@ -386,7 +386,13 @@
           "name": "member_id",
           "type": "bigint",
           "primaryKey": false,
-          "notNull": true
+          "notNull": false
+        },
+        "pre_member_id": {
+          "name": "pre_member_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
         },
         "status": {
           "name": "status",
@@ -450,6 +456,21 @@
           "concurrently": false,
           "method": "btree",
           "with": {}
+        },
+        "idx_attendance_pre_member_id": {
+          "name": "idx_attendance_pre_member_id",
+          "columns": [
+            {
+              "expression": "pre_member_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
         }
       },
       "foreignKeys": {
@@ -472,6 +493,19 @@
           "tableTo": "members",
           "columnsFrom": [
             "member_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "attendance_pre_member_id_fkey": {
+          "name": "attendance_pre_member_id_fkey",
+          "tableFrom": "attendance",
+          "tableTo": "pre_members",
+          "columnsFrom": [
+            "pre_member_id"
           ],
           "columnsTo": [
             "id"
@@ -502,10 +536,22 @@
             "event_id",
             "member_id"
           ]
+        },
+        "attendance_event_id_pre_member_id_key": {
+          "name": "attendance_event_id_pre_member_id_key",
+          "nullsNotDistinct": false,
+          "columns": [
+            "event_id",
+            "pre_member_id"
+          ]
         }
       },
       "policies": {},
       "checkConstraints": {
+        "attendance_one_person_check": {
+          "name": "attendance_one_person_check",
+          "value": "(\"attendance\".\"member_id\" IS NULL) <> (\"attendance\".\"pre_member_id\" IS NULL)"
+        },
         "attendance_status_check": {
           "name": "attendance_status_check",
           "value": "\"attendance\".\"status\" = ANY (ARRAY['present'::text, 'absent'::text, 'late'::text])"
@@ -876,6 +922,13 @@
           "type": "uuid",
           "primaryKey": false,
           "notNull": false
+        },
+        "audience": {
+          "name": "audience",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'members'"
         }
       },
       "indexes": {
@@ -971,6 +1024,10 @@
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {
+        "events_audience_check": {
+          "name": "events_audience_check",
+          "value": "\"events\".\"audience\" = ANY (ARRAY['members'::text, 'pre_members'::text, 'everyone'::text])"
+        },
         "events_check_in_window_check": {
           "name": "events_check_in_window_check",
           "value": "\"events\".\"check_in_opens_before_min\" BETWEEN 0 AND 720 AND \"events\".\"check_in_closes_after_min\" BETWEEN 0 AND 720"
@@ -1163,7 +1220,13 @@
           "name": "member_id",
           "type": "bigint",
           "primaryKey": false,
-          "notNull": true
+          "notNull": false
+        },
+        "pre_member_id": {
+          "name": "pre_member_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
         },
         "status": {
           "name": "status",
@@ -1258,6 +1321,19 @@
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
+        "member_link_requests_pre_member_id_fkey": {
+          "name": "member_link_requests_pre_member_id_fkey",
+          "tableFrom": "member_link_requests",
+          "tableTo": "pre_members",
+          "columnsFrom": [
+            "pre_member_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
         "member_link_requests_decided_by_fkey": {
           "name": "member_link_requests_decided_by_fkey",
           "tableFrom": "member_link_requests",
@@ -1279,6 +1355,10 @@
         "member_link_requests_status_check": {
           "name": "member_link_requests_status_check",
           "value": "\"member_link_requests\".\"status\" = ANY (ARRAY['pending'::text, 'approved'::text, 'rejected'::text])"
+        },
+        "member_link_requests_one_record_check": {
+          "name": "member_link_requests_one_record_check",
+          "value": "(\"member_link_requests\".\"member_id\" IS NULL) <> (\"member_link_requests\".\"pre_member_id\" IS NULL)"
         }
       },
       "isRLSEnabled": false
@@ -1795,6 +1875,13 @@
           "primaryKey": false,
           "notNull": false
         },
+        "audience": {
+          "name": "audience",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'members'"
+        },
         "image_key": {
           "name": "image_key",
           "type": "text",
@@ -1899,9 +1986,452 @@
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {
+        "notices_audience_check": {
+          "name": "notices_audience_check",
+          "value": "\"notices\".\"audience\" = ANY (ARRAY['members'::text, 'pre_members'::text, 'everyone'::text])"
+        },
         "notices_category_check": {
           "name": "notices_category_check",
           "value": "\"notices\".\"category\" = ANY (ARRAY['general'::text, 'urgent'::text, 'event'::text, 'liturgical'::text, 'fundraising'::text, 'community'::text])"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.pre_member_history": {
+      "name": "pre_member_history",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "pre_member_id": {
+          "name": "pre_member_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "action": {
+          "name": "action",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "actor_user_id": {
+          "name": "actor_user_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "at": {
+          "name": "at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "details": {
+          "name": "details",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'{}'::jsonb"
+        }
+      },
+      "indexes": {
+        "idx_pre_member_history_pre_member_id": {
+          "name": "idx_pre_member_history_pre_member_id",
+          "columns": [
+            {
+              "expression": "pre_member_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "pre_member_history_pre_member_id_fkey": {
+          "name": "pre_member_history_pre_member_id_fkey",
+          "tableFrom": "pre_member_history",
+          "tableTo": "pre_members",
+          "columnsFrom": [
+            "pre_member_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "pre_member_history_actor_user_id_fkey": {
+          "name": "pre_member_history_actor_user_id_fkey",
+          "tableFrom": "pre_member_history",
+          "tableTo": "auth_users",
+          "columnsFrom": [
+            "actor_user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "pre_member_history_action_check": {
+          "name": "pre_member_history_action_check",
+          "value": "\"pre_member_history\".\"action\" = ANY (ARRAY['submitted'::text, 'created'::text, 'approved'::text, 'rejected'::text, 'edited'::text, 'linked'::text, 'unlinked'::text, 'promoted'::text, 'promotion_undone'::text, 'withdrawn'::text, 'reinstated'::text])"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.pre_member_id_counters": {
+      "name": "pre_member_id_counters",
+      "schema": "",
+      "columns": {
+        "year": {
+          "name": "year",
+          "type": "integer",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "last": {
+          "name": "last",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.pre_members": {
+      "name": "pre_members",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "bigint",
+          "primaryKey": true,
+          "notNull": true,
+          "identity": {
+            "type": "byDefault",
+            "name": "pre_members_id_seq",
+            "schema": "public",
+            "increment": "1",
+            "startWith": "1",
+            "minValue": "1",
+            "maxValue": "9223372036854775807",
+            "cache": "1",
+            "cycle": false
+          }
+        },
+        "code": {
+          "name": "code",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'pending'"
+        },
+        "source": {
+          "name": "source",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "father_name": {
+          "name": "father_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "grandfather_name": {
+          "name": "grandfather_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "email": {
+          "name": "email",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "phone": {
+          "name": "phone",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "note": {
+          "name": "note",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "auth_user_id": {
+          "name": "auth_user_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "approved_at": {
+          "name": "approved_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "approved_by": {
+          "name": "approved_by",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "promoted_member_id": {
+          "name": "promoted_member_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "promoted_at": {
+          "name": "promoted_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "promoted_by": {
+          "name": "promoted_by",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "promotion_linked_account": {
+          "name": "promotion_linked_account",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "created_by": {
+          "name": "created_by",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "idx_pre_members_status": {
+          "name": "idx_pre_members_status",
+          "columns": [
+            {
+              "expression": "status",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_pre_members_phone": {
+          "name": "idx_pre_members_phone",
+          "columns": [
+            {
+              "expression": "phone",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_pre_members_email": {
+          "name": "idx_pre_members_email",
+          "columns": [
+            {
+              "expression": "lower(\"email\")",
+              "asc": true,
+              "isExpression": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "pre_members_promoted_member_id_key": {
+          "name": "pre_members_promoted_member_id_key",
+          "columns": [
+            {
+              "expression": "promoted_member_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "where": "\"pre_members\".\"status\" = 'promoted'",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "pre_members_auth_user_id_fkey": {
+          "name": "pre_members_auth_user_id_fkey",
+          "tableFrom": "pre_members",
+          "tableTo": "auth_users",
+          "columnsFrom": [
+            "auth_user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        },
+        "pre_members_promoted_member_id_fkey": {
+          "name": "pre_members_promoted_member_id_fkey",
+          "tableFrom": "pre_members",
+          "tableTo": "members",
+          "columnsFrom": [
+            "promoted_member_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "pre_members_approved_by_fkey": {
+          "name": "pre_members_approved_by_fkey",
+          "tableFrom": "pre_members",
+          "tableTo": "auth_users",
+          "columnsFrom": [
+            "approved_by"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        },
+        "pre_members_promoted_by_fkey": {
+          "name": "pre_members_promoted_by_fkey",
+          "tableFrom": "pre_members",
+          "tableTo": "auth_users",
+          "columnsFrom": [
+            "promoted_by"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        },
+        "pre_members_created_by_fkey": {
+          "name": "pre_members_created_by_fkey",
+          "tableFrom": "pre_members",
+          "tableTo": "auth_users",
+          "columnsFrom": [
+            "created_by"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "pre_members_code_key": {
+          "name": "pre_members_code_key",
+          "nullsNotDistinct": false,
+          "columns": [
+            "code"
+          ]
+        },
+        "pre_members_auth_user_id_key": {
+          "name": "pre_members_auth_user_id_key",
+          "nullsNotDistinct": false,
+          "columns": [
+            "auth_user_id"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {
+        "pre_members_status_check": {
+          "name": "pre_members_status_check",
+          "value": "\"pre_members\".\"status\" = ANY (ARRAY['pending'::text, 'active'::text, 'rejected'::text, 'withdrawn'::text, 'promoted'::text])"
+        },
+        "pre_members_source_check": {
+          "name": "pre_members_source_check",
+          "value": "\"pre_members\".\"source\" = ANY (ARRAY['self'::text, 'admin'::text])"
+        },
+        "pre_members_code_check": {
+          "name": "pre_members_code_check",
+          "value": "\"pre_members\".\"status\" IN ('pending', 'rejected') OR \"pre_members\".\"code\" IS NOT NULL"
+        },
+        "pre_members_promoted_check": {
+          "name": "pre_members_promoted_check",
+          "value": "\"pre_members\".\"status\" <> 'promoted' OR \"pre_members\".\"promoted_member_id\" IS NOT NULL"
         }
       },
       "isRLSEnabled": false
@@ -1988,95 +2518,6 @@
           "value": "\"profiles\".\"role\" = ANY (ARRAY['member'::text, 'dept_head'::text, 'admin'::text, 'super_admin'::text])"
         }
       },
-      "isRLSEnabled": false
-    },
-    "public.song_views": {
-      "name": "song_views",
-      "schema": "",
-      "columns": {
-        "user_id": {
-          "name": "user_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "song_id": {
-          "name": "song_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "viewed_at": {
-          "name": "viewed_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "idx_song_views_user_viewed_at": {
-          "name": "idx_song_views_user_viewed_at",
-          "columns": [
-            {
-              "expression": "user_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "viewed_at",
-              "isExpression": false,
-              "asc": false,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "song_views_user_id_fkey": {
-          "name": "song_views_user_id_fkey",
-          "tableFrom": "song_views",
-          "tableTo": "auth_users",
-          "columnsFrom": [
-            "user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "song_views_song_id_fkey": {
-          "name": "song_views_song_id_fkey",
-          "tableFrom": "song_views",
-          "tableTo": "songs",
-          "columnsFrom": [
-            "song_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {
-        "song_views_pkey": {
-          "name": "song_views_pkey",
-          "columns": [
-            "user_id",
-            "song_id"
-          ]
-        }
-      },
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
       "isRLSEnabled": false
     },
     "public.songs": {

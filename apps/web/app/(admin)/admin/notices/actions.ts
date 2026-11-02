@@ -3,7 +3,12 @@
 import { revalidatePath } from 'next/cache';
 import { eq } from 'drizzle-orm';
 import { z } from 'zod';
-import { db, NOTICE_CATEGORIES, notices } from '@felege-yordanos/db/server';
+import {
+  AUDIENCES,
+  db,
+  NOTICE_CATEGORIES,
+  notices,
+} from '@felege-yordanos/db/server';
 import { fail, NOT_ALLOWED, ok, type ActionResult } from '@/lib/action-result';
 import {
   expiryFromDate,
@@ -41,6 +46,8 @@ const noticeSchema = z.object({
     .string()
     .regex(/^\d*$/, 'Choose a department.')
     .transform((v) => (v ? Number(v) : null)),
+  // Who sees it (members, pre-members or both).
+  audience: z.enum(AUDIENCES, { error: 'Choose who it is for.' }),
   pinned: z.boolean(),
   // "YYYY-MM-DD" or empty for no expiry.
   expiresOn: z
@@ -63,6 +70,7 @@ function parseNotice(formData: FormData) {
     category: text(formData, 'category') || 'general',
     body: text(formData, 'body'),
     departmentId: text(formData, 'departmentId'),
+    audience: text(formData, 'audience') || 'members',
     pinned: text(formData, 'pinned') === 'on',
     expiresOn: text(formData, 'expiresOn'),
   });
@@ -91,7 +99,8 @@ function revalidateNotices() {
 }
 
 /**
- * FormData: title, summary, category, body, departmentId ('' = everyone), pinned ('on'),
+ * FormData: title, summary, category, body, departmentId ('' = everyone),
+ * audience ('members' | 'pre_members' | 'everyone'), pinned ('on'),
  * expiresOn ('YYYY-MM-DD' or ''), image (optional file).
  */
 export async function createNotice(formData: FormData): Promise<ActionResult> {

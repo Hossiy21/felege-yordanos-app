@@ -59,6 +59,8 @@ env:
     - R2_ENDPOINT
     - R2_ACCESS_KEY_ID
     - R2_SECRET_ACCESS_KEY
+    - TURNSTILE_SITE_KEY
+    - TURNSTILE_SECRET_KEY
 
 # Seconds a new version may take to pass /up (includes migrations).
 deploy_timeout: 60

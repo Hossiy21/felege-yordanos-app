@@ -61,8 +61,22 @@
     {
       "idx": 8,
       "version": "7",
-      "when": 1793194171982,
-      "tag": "0008_soft_the_santerians",
+      "when": 1793452105059,
+      "tag": "0008_pre_members",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1793454709557,
+      "tag": "0009_registration_sessions",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1793639204115,
+      "tag": "0010_song_views",
       "breakpoints": true
     }
   ]

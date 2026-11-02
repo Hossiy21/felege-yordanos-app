@@ -9,6 +9,7 @@ import {
   desc,
   eq,
   gt,
+  inArray,
   isNull,
   or,
   type SQL,
@@ -21,6 +22,7 @@ import {
   notices,
   profiles,
 } from '@felege-yordanos/db/server';
+import type { Audience } from './audience';
 import type { NoticeView } from './notices';
 import { isAdmin } from './permissions';
 import type { CurrentUser } from './session';
@@ -44,6 +46,7 @@ export async function listNotices({
   userId,
   includeExpired,
   departmentId,
+  audiences,
   limit,
 }: {
   /** The current user: decides which notices count as read. */
@@ -52,6 +55,11 @@ export async function listNotices({
   includeExpired: boolean;
   /** undefined = all, null = only "Everyone", a number = that department. */
   departmentId?: number | null;
+  /**
+   * Notices for these audiences only (visibleAudiences in
+   * lib/permissions.ts); null = all (staff). Required so no caller forgets it.
+   */
+  audiences: Audience[] | null;
   limit?: number;
 }): Promise<NoticeView[]> {
   const now = new Date();
@@ -61,6 +69,10 @@ export async function listNotices({
   if (departmentId === null) where.push(isNull(notices.departmentId));
   else if (departmentId !== undefined)
     where.push(eq(notices.departmentId, departmentId));
+  if (audiences !== null) {
+    if (audiences.length === 0) return [];
+    where.push(inArray(notices.audience, audiences));
+  }
 
   const query = db
     .select({
@@ -99,6 +111,7 @@ export async function listNotices({
       body: n.body,
       category: n.category,
       departmentId: n.departmentId,
+      audience: n.audience,
       departmentNameEn: r.departmentNameEn,
       departmentNameAm: r.departmentNameAm,
       imageKey: n.imageKey,

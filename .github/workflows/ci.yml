@@ -166,6 +166,8 @@ jobs:
       R2_ENDPOINT: ci
       R2_ACCESS_KEY_ID: ci
       R2_SECRET_ACCESS_KEY: ci
+      TURNSTILE_SITE_KEY: ci
+      TURNSTILE_SECRET_KEY: ci
     steps:
       - uses: actions/checkout@v6
       - uses: ruby/setup-ruby@v1
@@ -218,6 +220,9 @@ jobs:
       R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
       R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
       R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+      # Cloudflare Turnstile on /join (one widget per environment, same names).
+      TURNSTILE_SITE_KEY: ${{ secrets.TURNSTILE_SITE_KEY }}
+      TURNSTILE_SECRET_KEY: ${{ secrets.TURNSTILE_SECRET_KEY }}
     steps:
       - uses: actions/checkout@v6
 
@@ -316,6 +321,9 @@ jobs:
       R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
       R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
       R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+      # Cloudflare Turnstile on /join (one widget per environment, same names).
+      TURNSTILE_SITE_KEY: ${{ secrets.TURNSTILE_SITE_KEY }}
+      TURNSTILE_SECRET_KEY: ${{ secrets.TURNSTILE_SECRET_KEY }}
     steps:
       - uses: actions/checkout@v6
 

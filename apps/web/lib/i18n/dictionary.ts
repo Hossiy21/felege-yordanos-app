@@ -12,6 +12,7 @@ import { events } from './dict/events';
 import { legal } from './dict/legal';
 import { notices } from './dict/notices';
 import { people } from './dict/people';
+import { preMembers } from './dict/pre-members';
 import { songbook } from './dict/songbook';
 
 /** Shared entries (shell, common words). Screen-specific entries live in ./dict/*.ts */
@@ -366,4 +367,5 @@ export const AM: Record<string, string> = {
   ...people,
   ...legal,
   ...notices,
+  ...preMembers,
 };

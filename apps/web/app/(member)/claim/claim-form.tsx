@@ -8,13 +8,38 @@ import { Card } from '@/components/ds';
 import { Input } from '@/components/ui/input';
 import { useToast } from '@/hooks/use-toast';
 import { useT } from '@/lib/i18n/client';
-import { cancelMemberLinkRequest, requestMemberLink } from './actions';
+import { cn } from '@/lib/utils';
+import {
+  cancelMemberLinkRequest,
+  requestMemberLink,
+  requestPreMemberLink,
+} from './actions';
 
+/** `memberId` is the SSU member ID, or the FYP code when `preMember`. */
 export type ClaimState =
   | { kind: 'none' }
-  | { kind: 'linked'; memberId: string }
-  | { kind: 'pending'; memberId: string; requestedAt: string }
-  | { kind: 'rejected'; memberId: string; note: string | null };
+  | {
+      kind: 'linked';
+      memberId: string;
+      preMember: boolean;
+      /** Linked pre-member record that is no longer active. */
+      inactive?: boolean;
+    }
+  | {
+      kind: 'pending';
+      memberId: string;
+      preMember: boolean;
+      requestedAt: string;
+    }
+  | {
+      kind: 'rejected';
+      memberId: string;
+      preMember: boolean;
+      note: string | null;
+    };
+
+/** Which record the user links to: member (SSU ID) or pre-member (FYP). */
+type ClaimType = 'member' | 'pre_member';
 
 const primaryBtn =
   'sacred-gradient flex w-full items-center justify-center gap-2 rounded-xl border border-gold/40 px-5 py-3 text-[13px] font-semibold tracking-[0.04em] text-cream shadow-fy-md transition-opacity hover:opacity-95 disabled:opacity-60';
@@ -51,6 +76,10 @@ export function ClaimForm({
   required: boolean;
 }) {
   const [memberId, setMemberId] = useState('');
+  const [type, setType] = useState<ClaimType>(
+    state.kind === 'rejected' && state.preMember ? 'pre_member' : 'member',
+  );
+  const pre = type === 'pre_member';
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const router = useRouter();
@@ -62,7 +91,9 @@ export function ClaimForm({
     setLoading(true);
     setError('');
     try {
-      const res = await requestMemberLink(memberId);
+      const res = await (pre
+        ? requestPreMemberLink(memberId)
+        : requestMemberLink(memberId));
       if (!res.ok) {
         setError(t(res.error));
         return;
@@ -98,8 +129,16 @@ export function ClaimForm({
           title={t('Your account is linked')}
           body={
             <>
-              {t('Member ID')}:{' '}
+              {t(state.preMember ? 'Pre-member ID' : 'Member ID')}:{' '}
               <span className="font-mono text-ink">{state.memberId}</span>
+              {state.inactive && (
+                <>
+                  <br />
+                  {t(
+                    'This pre-member record is not active. Please ask a volunteer at the desk.',
+                  )}
+                </>
+              )}
             </>
           }
         />
@@ -118,12 +157,16 @@ export function ClaimForm({
           title={t('Waiting for approval')}
           body={
             <>
-              {t('Requested member ID')}:{' '}
+              {t(state.preMember ? 'Requested pre-member ID' : 'Requested member ID')}:{' '}
               <span className="font-mono text-ink">{state.memberId}</span>
               <br />
-              {t(
-                'An admin will confirm it soon. Events and donations open once it is approved.',
-              )}
+              {state.preMember
+                ? t(
+                    'An admin will confirm it soon. Your events and notices open once it is approved.',
+                  )
+                : t(
+                    'An admin will confirm it soon. Events and donations open once it is approved.',
+                  )}
             </>
           }
         />
@@ -168,14 +211,57 @@ export function ClaimForm({
           />
         </div>
       )}
+      <div
+        role="radiogroup"
+        aria-label={t('I am a')}
+        className="mb-4 grid grid-cols-2 gap-1 rounded-xl bg-parchment-deep p-[3px]"
+      >
+        {(
+          [
+            ['member', 'I am a member'],
+            ['pre_member', 'I am a ቅድመ አባል'],
+          ] as const
+        ).map(([key, label]) => (
+          <button
+            key={key}
+            type="button"
+            role="radio"
+            aria-checked={type === key}
+            onClick={() => {
+              setType(key);
+              setMemberId('');
+              setError('');
+            }}
+            className={cn(
+              'rounded-[9px] px-2 py-2.5 text-[12px] transition-colors',
+              type === key
+                ? 'bg-parchment-soft font-semibold text-brand-ink shadow-[0_1px_2px_rgba(10,60,54,0.08)]'
+                : 'font-medium text-ink-muted hover:text-ink',
+            )}
+          >
+            {t(label)}
+          </button>
+        ))}
+      </div>
       <div className="flex items-start gap-3">
-        <div className="shrink-0 rounded-full border border-gold/30 bg-gold/10 p-2.5 text-gold-deep">
+        <div
+          className={cn(
+            'shrink-0 rounded-full border p-2.5',
+            pre
+              ? 'border-pre/30 bg-pre-bg text-pre'
+              : 'border-gold/30 bg-gold/10 text-gold-deep',
+          )}
+        >
           <Link2 className="h-4 w-4" />
         </div>
         <p className="text-[12.5px] leading-relaxed text-ink-muted">
-          {t(
-            'Enter your Sunday School member ID. You can type just the number, for example 42. An admin confirms the link before it becomes active.',
-          )}
+          {pre
+            ? t(
+                'Enter the pre-member ID you received by email, for example FYP-2019-0001. An admin confirms the link before it becomes active.',
+              )
+            : t(
+                'Enter your Sunday School member ID. You can type just the number, for example 42. An admin confirms the link before it becomes active.',
+              )}
         </p>
       </div>
 
@@ -185,13 +271,15 @@ export function ClaimForm({
             htmlFor="member-id"
             className="mb-1.5 block text-[10px] font-semibold uppercase tracking-[0.16em] text-gold-deep"
           >
-            {t('Member ID')}
+            {t(pre ? 'Pre-member ID' : 'Member ID')}
           </label>
           <Input
             id="member-id"
             value={memberId}
             onChange={(e) => setMemberId(e.target.value)}
-            placeholder={t('e.g. {id}', { id: '42 or ssu/01/03/05/00042' })}
+            placeholder={t('e.g. {id}', {
+              id: pre ? 'FYP-2019-0001' : '42 or ssu/01/03/05/00042',
+            })}
             required
             inputMode="text"
             autoComplete="off"

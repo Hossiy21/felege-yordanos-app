@@ -5,7 +5,11 @@ import { eq } from 'drizzle-orm';
 import { z } from 'zod';
 import { db, noticeReads, notices } from '@felege-yordanos/db/server';
 import { fail, NOT_ALLOWED, ok, type ActionResult } from '@/lib/action-result';
-import { canSeeExpiredNotices, canViewNotices } from '@/lib/permissions';
+import {
+  canSeeExpiredNotices,
+  canViewNotice,
+  canViewNotices,
+} from '@/lib/permissions';
 import { requireUser } from '@/lib/session';
 
 /** Marks a notice as read by the signed-in user (unread dots and count). */
@@ -16,12 +20,13 @@ export async function markNoticeRead(id: string): Promise<ActionResult> {
   if (!noticeId.success) return fail('Notice not found.');
 
   const [notice] = await db
-    .select({ expiresAt: notices.expiresAt })
+    .select({ expiresAt: notices.expiresAt, audience: notices.audience })
     .from(notices)
     .where(eq(notices.id, noticeId.data))
     .limit(1);
   const visible =
     notice &&
+    canViewNotice(user, notice) &&
     (!notice.expiresAt ||
       notice.expiresAt > new Date() ||
       canSeeExpiredNotices(user));

@@ -11,8 +11,19 @@ import { cn } from '@/lib/utils';
 const ACTION =
   'inline-flex flex-1 items-center justify-center gap-1.5 rounded-[10px] border border-gold/35 px-3 py-2.5 text-xs font-semibold transition-colors disabled:opacity-60';
 
-/** Phone check-in card: QR on the sacred gradient with save and share. */
-export function MemberQRCard({ memberId }: { memberId: string }) {
+/**
+ * Phone check-in card: QR on the sacred gradient with save and share.
+ * `pre_member`: the ቅድመ አባል card (FYP code), a plum band and label so it is
+ * told apart from a member card at a glance.
+ */
+export function MemberQRCard({
+  memberId,
+  variant = 'member',
+}: {
+  memberId: string;
+  variant?: 'member' | 'pre_member';
+}) {
+  const pre = variant === 'pre_member';
   const canvasWrapperRef = useRef<HTMLDivElement>(null);
   const [busy, setBusy] = useState<'save' | 'share' | null>(null);
   const { toast } = useToast();
@@ -103,10 +114,25 @@ export function MemberQRCard({ memberId }: { memberId: string }) {
 
   return (
     <section
-      className="sacred-gradient relative overflow-hidden rounded-[18px] border border-gold/30 px-[18px] pb-4 pt-[18px] text-cream shadow-[0_12px_28px_-12px_rgba(10,60,54,0.4)]"
-      aria-label={t('Member check-in QR code')}
+      className={cn(
+        'relative overflow-hidden rounded-[18px] border px-[18px] pb-4 pt-[18px] text-cream shadow-[0_12px_28px_-12px_rgba(10,60,54,0.4)]',
+        pre
+          ? 'border-pre/40 bg-gradient-to-br from-pre-mid to-pre-deep'
+          : 'sacred-gradient border-gold/30',
+      )}
+      aria-label={t(pre ? 'Pre-member check-in QR code' : 'Member check-in QR code')}
     >
       <div className="tibeb-gold pointer-events-none absolute inset-0 opacity-[0.35]" />
+      {pre && (
+        <div className="relative -mx-[18px] -mt-[18px] mb-3 flex items-center justify-between bg-pre-deep/70 px-[18px] py-1.5">
+          <span className="font-ethiopic text-[12px] font-semibold tracking-[0.04em] text-cream">
+            ቅድመ አባል
+          </span>
+          <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-cream/75">
+            Pre-member
+          </span>
+        </div>
+      )}
       <div className="relative">
         <div className="mb-3 flex items-baseline justify-between">
           <div className="font-ethiopic text-[11px] tracking-[0.06em] text-gold-light">
@@ -123,7 +149,7 @@ export function MemberQRCard({ memberId }: { memberId: string }) {
             ref={canvasWrapperRef}
             className="rounded-xl border border-gold/40 bg-cream p-3 shadow-[0_8px_20px_-8px_rgba(0,0,0,0.4)]"
           >
-            <MemberQR value={memberId} size={196} />
+            <MemberQR value={memberId} size={196} variant={variant} />
           </div>
         </div>
 

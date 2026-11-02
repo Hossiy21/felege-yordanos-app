@@ -47,6 +47,12 @@
     --fy-absent: 161 40 49;
     --fy-absent-bg: 242 216 218;
 
+    /* Pre-member (ቅድመ አባል): plum band, badge and QR card */
+    --fy-pre: 92 61 128; /* #5C3D80 */
+    --fy-pre-mid: 92 61 128; /* card band, same in both themes */
+    --fy-pre-deep: 58 36 84; /* #3A2454 */
+    --fy-pre-bg: 236 228 244; /* #ECE4F4 */
+
     /* shadcn/ui semantic tokens (HSL) */
     --background: 43 39% 93%;
     --foreground: 33 40% 12%;
@@ -104,6 +110,11 @@
     --fy-late-bg: 46 31 11;
     --fy-absent: 194 72 82;
     --fy-absent-bg: 46 18 22;
+
+    --fy-pre: 184 156 222; /* #B89CDE text and accents on dark */
+    --fy-pre-mid: 92 61 128; /* card band stays plum */
+    --fy-pre-deep: 58 36 84;
+    --fy-pre-bg: 38 28 50; /* #261C32 */
 
     --background: 204 11% 9%;
     --foreground: 45 44% 96%;

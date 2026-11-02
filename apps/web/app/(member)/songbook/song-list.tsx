@@ -95,7 +95,7 @@ export function SongList({ songs, categories }: SongListProps) {
               className="flex items-center gap-3 rounded-xl border border-parchment-edge bg-parchment-soft py-[11px] pl-3 pr-3.5 transition-colors hover:bg-parchment-deep"
             >
               <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[10px] border border-parchment-edge bg-gradient-to-br from-parchment-soft to-parchment-deep">
-                <span className="font-display text-[18px] font-semibold tabular-nums text-brand dark:text-gold">
+                <span className="font-display text-[18px] font-semibold tabular-nums lining-nums text-brand dark:text-gold">
                   {songNumber(song.number)}
                 </span>
               </div>

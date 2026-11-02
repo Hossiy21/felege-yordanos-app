@@ -1,19 +1,21 @@
-import { asc, desc, eq, gte } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, inArray } from 'drizzle-orm';
 import {
   attendance,
   db,
   departments,
   events,
   members,
+  preMembers,
 } from '@felege-yordanos/db/server';
 import { Link2 } from 'lucide-react';
 import Link from 'next/link';
 import { Card, PageHead } from '@/components/ds';
 import { deptShortLabel, hhmm, todayYmd } from '@/lib/events';
 import { getLocale, getT } from '@/lib/i18n/server';
-import { requireLinkedMember } from '@/lib/session';
+import { visibleAudiences } from '@/lib/permissions';
+import { requireMemberOrPreMember } from '@/lib/session';
 import { cn } from '@/lib/utils';
-import { primaryBtn } from '@/components/events/event-ui';
+import { primaryBtn } from '@/components/events/button-classes';
 import {
   AttendanceView,
   type AttnRow,
@@ -21,17 +23,32 @@ import {
 } from './attendance-view';
 
 export default async function MyAttendancePage() {
-  // Plain members need a linked member record; staff may still open the page.
-  const user = await requireLinkedMember();
+  // Plain members need a linked member record, pre-members an active
+  // pre-member record; staff may still open the page.
+  const user = await requireMemberOrPreMember();
   const t = await getT();
   const locale = await getLocale();
+  const audiences = visibleAudiences(user);
 
-  // The member record linked to this login (through the /claim flow).
-  const [member] = await db
+  // The record linked to this login (through the /claim flow): a member, or
+  // an active pre-member (their attendance rows are on pre_member_id).
+  const [linkedMember] = await db
     .select({ id: members.id, memberId: members.memberId })
     .from(members)
     .where(eq(members.authUserId, user.id))
     .limit(1);
+  const [linkedPre] =
+    !linkedMember && user.preMemberRecordId !== null
+      ? await db
+          .select({ id: preMembers.id, memberId: preMembers.code })
+          .from(preMembers)
+          .where(eq(preMembers.id, user.preMemberRecordId))
+          .limit(1)
+      : [];
+  const member = linkedMember ?? (linkedPre?.memberId ? linkedPre : null);
+  const ownRows = linkedMember
+    ? eq(attendance.memberId, linkedMember.id)
+    : eq(attendance.preMemberId, linkedPre?.id ?? 0);
 
   if (!member) {
     return (
@@ -71,13 +88,21 @@ export default async function MyAttendancePage() {
       })
       .from(attendance)
       .innerJoin(events, eq(events.id, attendance.eventId))
-      .where(eq(attendance.memberId, member.id))
+      .where(ownRows)
       .orderBy(desc(attendance.createdAt)),
     db.select().from(departments).orderBy(asc(departments.id)),
+    // Next event for this user's audience (staff: any).
     db
       .select()
       .from(events)
-      .where(gte(events.eventDate, today))
+      .where(
+        audiences === null
+          ? gte(events.eventDate, today)
+          : and(
+              gte(events.eventDate, today),
+              inArray(events.audience, audiences),
+            ),
+      )
       .orderBy(asc(events.eventDate))
       .limit(1),
   ]);
@@ -131,6 +156,7 @@ export default async function MyAttendancePage() {
       rows={rows}
       nextEvent={nextEvent}
       memberId={member.memberId}
+      preMember={!linkedMember}
     />
   );
 }

@@ -7,11 +7,19 @@ import { z } from 'zod';
 import {
   attendance,
   ATTENDANCE_STATUSES,
+  AUDIENCES,
   db,
   events,
-  members,
+  preMembers,
   RECURRENCES,
 } from '@felege-yordanos/db/server';
+import {
+  attendanceRowKey,
+  audienceIncludes,
+  parsePersonKey,
+} from '@/lib/audience';
+import { insertAutoAbsents } from '@/lib/expected-people';
+import { parsePreMemberCode } from '@/lib/pre-members';
 import { fail, NOT_ALLOWED, ok, type ActionResult } from '@/lib/action-result';
 import {
   generateOccurrences,
@@ -73,6 +81,8 @@ const eventFields = z.object({
   startTime: hhmm,
   endTime: hhmm,
   departmentId: z.number().int().positive().nullable(),
+  // Who the event is for (who is expected at check-in and on close).
+  audience: z.enum(AUDIENCES).default('members'),
   // Check-in window around the start time, in minutes.
   checkInOpensBeforeMin: windowMinutes,
   checkInClosesAfterMin: windowMinutes,
@@ -310,6 +320,7 @@ export async function updateSeriesEnd(input: {
             startTime: event.startTime,
             endTime: event.endTime,
             departmentId: event.departmentId,
+            audience: event.audience,
             checkInOpensBeforeMin: event.checkInOpensBeforeMin,
             checkInClosesAfterMin: event.checkInClosesAfterMin,
             createdBy: user.id,
@@ -377,20 +388,71 @@ function checkInRefusal(
 const TAP_METHODS = ['qr', 'quick_id', 'list'] as const;
 export type TapMethod = (typeof TAP_METHODS)[number];
 
+const personKeySchema = z
+  .string()
+  .transform((v, ctx) => {
+    const parsed = parsePersonKey(v);
+    if (!parsed) {
+      ctx.addIssue({ code: 'custom', message: 'Person not found.' });
+      return z.NEVER;
+    }
+    return parsed;
+  });
+
 const markSchema = z.object({
   eventId,
-  memberId: z.number().int().positive(),
+  // "m:<members.id>" or "p:<pre_members.id>" (lib/audience.ts).
+  personKey: personKeySchema,
   status: z.enum(ATTENDANCE_STATUSES),
   method: z.enum(TAP_METHODS),
 });
 
+const NOT_IN_EVENT = 'Not part of this event.';
+
 /**
- * Marks (or changes) one member's attendance for an event, with the server
- * time and the tab it was tapped in. The check-in time is set by the first
- * present/late mark and kept (with its method) when present and late are
- * swapped; marking absent clears it.
+ * Why this person may not be marked at this event, or null: the event's
+ * audience must include their kind, and pre-members must be active (only
+ * active pre-members check in).
+ */
+async function personRefusal(
+  event: typeof events.$inferSelect,
+  person: { kind: 'member' | 'pre_member'; id: number },
+): Promise<string | null> {
+  if (!audienceIncludes(event.audience, person.kind)) return NOT_IN_EVENT;
+  if (person.kind === 'member') return null; // foreign key checks the row
+  const [row] = await db
+    .select({ status: preMembers.status })
+    .from(preMembers)
+    .where(eq(preMembers.id, person.id))
+    .limit(1);
+  if (!row) return 'Person not found.';
+  return row.status === 'active' ? null : preMemberRefusal(row.status);
+}
+
+/** Message for a pre-member who may not check in (by status). */
+function preMemberRefusal(status: string): string {
+  switch (status) {
+    case 'promoted':
+      return 'Now a member. Please use the member QR.';
+    case 'pending':
+      return 'This registration is not approved yet.';
+    case 'rejected':
+      return 'This registration was rejected.';
+    case 'withdrawn':
+      return 'This pre-member has been withdrawn.';
+    default:
+      return 'Person not found.';
+  }
+}
+
+/**
+ * Marks (or changes) one person's attendance for an event (a member or a
+ * pre-member), with the server time and the tab it was tapped in. The
+ * check-in time is set by the first present/late mark and kept (with its
+ * method) when present and late are swapped; marking absent clears it.
  * Permission: canMarkAttendance(user, event) on the stored event, the event
  * is not closed, and for department heads the check-in window (canCheckInNow).
+ * The person must be expected at the event (its audience).
  *
  * No revalidatePath here on purpose: any revalidation makes Next.js send the
  * whole check-in page (every member) back with each tap, which is slow on
@@ -399,7 +461,7 @@ const markSchema = z.object({
  */
 export async function markAttendance(input: {
   eventId: string;
-  memberId: number;
+  personKey: string;
   status: (typeof ATTENDANCE_STATUSES)[number];
   method: TapMethod;
 }): Promise<ActionResult> {
@@ -412,24 +474,31 @@ export async function markAttendance(input: {
   if (!event) return fail('Event not found.');
   const refused = checkInRefusal(user, event);
   if (refused) return fail(refused);
+  const person = parsed.data.personKey;
+  const notExpected = await personRefusal(event, person);
+  if (notExpected) return fail(notExpected);
 
   const { status, method } = parsed.data;
   const attended = status !== 'absent';
   // Already present or late: keep the time and how it was made.
   const wasAttended = sql`${attendance.status} IN ('present', 'late')`;
+  const isMember = person.kind === 'member';
   try {
     await db
       .insert(attendance)
       .values({
         eventId: event.id,
-        memberId: parsed.data.memberId,
+        memberId: isMember ? person.id : null,
+        preMemberId: isMember ? null : person.id,
         status,
         markedBy: user.id,
         method,
         checkedInAt: attended ? sql`now()` : null,
       })
       .onConflictDoUpdate({
-        target: [attendance.eventId, attendance.memberId],
+        target: isMember
+          ? [attendance.eventId, attendance.memberId]
+          : [attendance.eventId, attendance.preMemberId],
         set: {
           status,
           markedBy: user.id,
@@ -442,7 +511,7 @@ export async function markAttendance(input: {
         },
       });
   } catch (err) {
-    if (isForeignKeyViolation(err)) return fail('Member not found.');
+    if (isForeignKeyViolation(err)) return fail('Person not found.');
     console.error('[attendance] mark failed:', err);
     return fail('Could not save attendance. Please try again.');
   }
@@ -450,19 +519,16 @@ export async function markAttendance(input: {
   return ok();
 }
 
-const clearSchema = z.object({
-  eventId,
-  memberId: z.number().int().positive(),
-});
+const clearSchema = z.object({ eventId, personKey: personKeySchema });
 
 /**
- * Clears one member's attendance for an event (back to "not marked"), e.g.
+ * Clears one person's attendance for an event (back to "not marked"), e.g.
  * after a wrong tap. Same permission as markAttendance, and no revalidatePath
  * for the same reason.
  */
 export async function clearAttendance(input: {
   eventId: string;
-  memberId: number;
+  personKey: string;
 }): Promise<ActionResult> {
   const user = await requireUser();
 
@@ -474,13 +540,16 @@ export async function clearAttendance(input: {
   const refused = checkInRefusal(user, event);
   if (refused) return fail(refused);
 
+  const person = parsed.data.personKey;
   try {
     await db
       .delete(attendance)
       .where(
         and(
           eq(attendance.eventId, event.id),
-          eq(attendance.memberId, parsed.data.memberId),
+          person.kind === 'member'
+            ? eq(attendance.memberId, person.id)
+            : eq(attendance.preMemberId, person.id),
         ),
       );
   } catch (err) {
@@ -492,14 +561,14 @@ export async function clearAttendance(input: {
 }
 
 /**
- * Current attendance of one event (member id + status only), for the
+ * Current attendance of one event (person key + status only), for the
  * check-in screen to sync with other devices without reloading the page.
  * Permission: canViewEventAttendance(user, event), same as the page.
  */
 export async function getEventAttendance(id: string): Promise<
   ActionResult<{
     rows: {
-      memberId: number;
+      key: string;
       status: (typeof ATTENDANCE_STATUSES)[number];
     }[];
     /** Closed since the page loaded: the screen reloads into the summary. */
@@ -514,17 +583,70 @@ export async function getEventAttendance(id: string): Promise<
   if (!canViewEventAttendance(user, event)) return fail(NOT_ALLOWED);
 
   const rows = await db
-    .select({ memberId: attendance.memberId, status: attendance.status })
+    .select({
+      memberId: attendance.memberId,
+      preMemberId: attendance.preMemberId,
+      status: attendance.status,
+    })
     .from(attendance)
     .where(eq(attendance.eventId, event.id));
-  return ok({ rows, closed: event.closedAt !== null });
+  return ok({
+    rows: rows.map((r) => ({ key: attendanceRowKey(r), status: r.status })),
+    closed: event.closedAt !== null,
+  });
+}
+
+const lookupSchema = z.object({ eventId, code: z.string().max(100) });
+
+/**
+ * Why a scanned or typed code is not on this event's check-in list, so the
+ * screen can say more than "not found": a pre-member code at a members-only
+ * event, a promoted pre-member, a registration that is not approved yet…
+ * Nothing is marked. Permission: canMarkAttendance(user, event).
+ */
+export async function explainCheckInCode(input: {
+  eventId: string;
+  code: string;
+}): Promise<ActionResult<{ message: string; preMember: boolean }>> {
+  const user = await requireUser();
+  const parsed = lookupSchema.safeParse(input);
+  if (!parsed.success) return fail('Event not found.');
+  const event = await loadEvent(parsed.data.eventId);
+  if (!event) return fail('Event not found.');
+  if (!canMarkAttendance(user, event)) return fail(NOT_ALLOWED);
+
+  const code = parsePreMemberCode(parsed.data.code);
+  if (!code) {
+    // A member ID that is not on the list.
+    return ok({
+      message: audienceIncludes(event.audience, 'member')
+        ? 'Member ID not found'
+        : NOT_IN_EVENT,
+      preMember: false,
+    });
+  }
+  const [row] = await db
+    .select({ status: preMembers.status })
+    .from(preMembers)
+    .where(eq(preMembers.code, code))
+    .limit(1);
+  if (!row) return ok({ message: 'Pre-member ID not found', preMember: true });
+  if (row.status !== 'active')
+    return ok({ message: preMemberRefusal(row.status), preMember: true });
+  return ok({
+    message: audienceIncludes(event.audience, 'pre_member')
+      ? 'Pre-member ID not found'
+      : NOT_IN_EVENT,
+    preMember: true,
+  });
 }
 
 /* ─── Close and reopen ─────────────────────────────────────── */
 
 /**
- * Closes an event: everyone on the check-in list (active members) without a
- * mark becomes absent (method 'auto_close'), and check-in stops.
+ * Closes an event: everyone on the check-in list (lib/expected-people.ts:
+ * active members and/or active pre-members, by audience) without a mark
+ * becomes absent (method 'auto_close'), and check-in stops.
  * Permission: canCloseEvent(user, event) on the stored row.
  */
 export async function closeEvent(
@@ -551,14 +673,7 @@ export async function closeEvent(
         .where(and(eq(events.id, event.id), isNull(events.closedAt)))
         .returning({ id: events.id });
       if (!closed) return null;
-      const inserted = await tx.execute(sql`
-        INSERT INTO ${attendance} (event_id, member_id, status, marked_by, method)
-        SELECT ${event.id}::uuid, ${members.id}, 'absent', ${user.id}::uuid, 'auto_close'
-        FROM ${members}
-        WHERE ${members.status} = 'Active'
-        ON CONFLICT (event_id, member_id) DO NOTHING
-      `);
-      return inserted.count ?? 0;
+      return insertAutoAbsents(tx, event, user.id);
     });
     if (markedAbsent === null) return fail('This event is already closed.');
     revalidateAttendance();

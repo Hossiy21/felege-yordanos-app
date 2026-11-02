@@ -24,6 +24,7 @@ import {
   date,
   index,
   integer,
+  jsonb,
   numeric,
   pgTable,
   primaryKey,
@@ -224,6 +225,245 @@ export const memberSpiritualEducation = pgTable(
   ],
 );
 
+/* ─── Registration sessions (/join) ──────────────────────── */
+
+/**
+ * A self-registration window for pre-members: an admin opens it, the app
+ * shows a QR to /join?s=<token>. The token only works while the session is
+ * open (opens_at <= now < closes_at, not closed early).
+ */
+export const registrationSessions = pgTable(
+  'registration_sessions',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    // Random, unguessable; never reused.
+    token: text('token').notNull().unique('registration_sessions_token_key'),
+    label: text('label').notNull(),
+    opensAt: timestamp('opens_at', { withTimezone: true }).notNull(),
+    closesAt: timestamp('closes_at', { withTimezone: true }).notNull(),
+    // Closed early by an admin.
+    closedAt: timestamp('closed_at', { withTimezone: true }),
+    closedBy: uuid('closed_by'),
+    createdBy: uuid('created_by'),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [
+    check(
+      'registration_sessions_window_check',
+      sql`${t.closesAt} > ${t.opensAt}`,
+    ),
+    index('idx_registration_sessions_opens_at').on(t.opensAt.desc()),
+    foreignKey({
+      name: 'registration_sessions_created_by_fkey',
+      columns: [t.createdBy],
+      foreignColumns: [authUsers.id],
+    }).onDelete('set null'),
+    foreignKey({
+      name: 'registration_sessions_closed_by_fkey',
+      columns: [t.closedBy],
+      foreignColumns: [authUsers.id],
+    }).onDelete('set null'),
+  ],
+);
+
+/**
+ * Request counts per key and time window (self-registration rate limits:
+ * per IP and per session). Old windows are pruned as new ones are written.
+ */
+export const rateLimits = pgTable(
+  'rate_limits',
+  {
+    key: text('key').notNull(),
+    windowStart: timestamp('window_start', { withTimezone: true }).notNull(),
+    count: integer('count').notNull().default(0),
+  },
+  (t) => [
+    primaryKey({ name: 'rate_limits_pkey', columns: [t.key, t.windowStart] }),
+    index('idx_rate_limits_window_start').on(t.windowStart),
+  ],
+);
+
+/* ─── Pre-members (ቅድመ አባል) ─────────────────────────────── */
+
+/**
+ * People learning at the school who are not registered members yet (no SSU
+ * ID). Kept apart from `members`, which mirrors the SSU register. Approval
+ * assigns `code` (FYP-<Ethiopian year>-<4 digits>, from
+ * pre_member_id_counters); an admin promotes them once their member row
+ * exists. Every change is logged in pre_member_history.
+ */
+export const PRE_MEMBER_STATUSES = [
+  'pending',
+  'active',
+  'rejected',
+  'withdrawn',
+  'promoted',
+] as const;
+export type PreMemberStatus = (typeof PRE_MEMBER_STATUSES)[number];
+
+export const PRE_MEMBER_SOURCES = ['self', 'admin'] as const;
+export type PreMemberSource = (typeof PRE_MEMBER_SOURCES)[number];
+
+export const preMembers = pgTable(
+  'pre_members',
+  {
+    id: bigint('id', { mode: 'number' })
+      .primaryKey()
+      .generatedByDefaultAsIdentity(),
+    // Assigned on approval, never reused.
+    code: text('code').unique('pre_members_code_key'),
+    status: text('status')
+      .$type<PreMemberStatus>()
+      .notNull()
+      .default('pending'),
+    source: text('source').$type<PreMemberSource>().notNull(),
+    name: text('name').notNull(),
+    fatherName: text('father_name').notNull(),
+    grandfatherName: text('grandfather_name').notNull(),
+    email: text('email'),
+    phone: text('phone'),
+    // Rejection or withdrawal note (admins only).
+    note: text('note'),
+    // Self-registration: the session whose QR was used.
+    sessionId: uuid('session_id'),
+    // Login account linked through /claim.
+    authUserId: uuid('auth_user_id').unique('pre_members_auth_user_id_key'),
+    approvedAt: timestamp('approved_at', { withTimezone: true }),
+    approvedBy: uuid('approved_by'),
+    promotedMemberId: bigintId('promoted_member_id'),
+    promotedAt: timestamp('promoted_at', { withTimezone: true }),
+    promotedBy: uuid('promoted_by'),
+    // The promotion set members.auth_user_id (undo removes only that link).
+    promotionLinkedAccount: boolean('promotion_linked_account')
+      .notNull()
+      .default(false),
+    createdBy: uuid('created_by'),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [
+    check(
+      'pre_members_status_check',
+      sql`${t.status} = ANY (ARRAY['pending'::text, 'active'::text, 'rejected'::text, 'withdrawn'::text, 'promoted'::text])`,
+    ),
+    check(
+      'pre_members_source_check',
+      sql`${t.source} = ANY (ARRAY['self'::text, 'admin'::text])`,
+    ),
+    // Approved records always have an ID.
+    check(
+      'pre_members_code_check',
+      sql`${t.status} IN ('pending', 'rejected') OR ${t.code} IS NOT NULL`,
+    ),
+    check(
+      'pre_members_promoted_check',
+      sql`${t.status} <> 'promoted' OR ${t.promotedMemberId} IS NOT NULL`,
+    ),
+    index('idx_pre_members_status').on(t.status),
+    index('idx_pre_members_session_id').on(t.sessionId),
+    foreignKey({
+      name: 'pre_members_session_id_fkey',
+      columns: [t.sessionId],
+      foreignColumns: [registrationSessions.id],
+    }).onDelete('set null'),
+    index('idx_pre_members_phone').on(t.phone),
+    index('idx_pre_members_email').on(sql`lower(${t.email})`),
+    // One promotion per member row.
+    uniqueIndex('pre_members_promoted_member_id_key')
+      .on(t.promotedMemberId)
+      .where(sql`${t.status} = 'promoted'`),
+    foreignKey({
+      name: 'pre_members_auth_user_id_fkey',
+      columns: [t.authUserId],
+      foreignColumns: [authUsers.id],
+    }).onDelete('set null'),
+    foreignKey({
+      name: 'pre_members_promoted_member_id_fkey',
+      columns: [t.promotedMemberId],
+      foreignColumns: [members.id],
+    }),
+    foreignKey({
+      name: 'pre_members_approved_by_fkey',
+      columns: [t.approvedBy],
+      foreignColumns: [authUsers.id],
+    }).onDelete('set null'),
+    foreignKey({
+      name: 'pre_members_promoted_by_fkey',
+      columns: [t.promotedBy],
+      foreignColumns: [authUsers.id],
+    }).onDelete('set null'),
+    foreignKey({
+      name: 'pre_members_created_by_fkey',
+      columns: [t.createdBy],
+      foreignColumns: [authUsers.id],
+    }).onDelete('set null'),
+  ],
+);
+
+/** Last number given out per Ethiopian year (FYP-<year>-<number>). */
+export const preMemberIdCounters = pgTable('pre_member_id_counters', {
+  year: integer('year').primaryKey(),
+  last: integer('last').notNull(),
+});
+
+export const PRE_MEMBER_ACTIONS = [
+  'submitted',
+  'created',
+  'approved',
+  'rejected',
+  'edited',
+  'linked',
+  'unlinked',
+  'promoted',
+  'promotion_undone',
+  'withdrawn',
+  'reinstated',
+] as const;
+export type PreMemberAction = (typeof PRE_MEMBER_ACTIONS)[number];
+
+/**
+ * Who did what to a pre-member, and when (server time). Append-only: a
+ * trigger refuses UPDATE and DELETE. actor_user_id is null for
+ * self-registration.
+ */
+export const preMemberHistory = pgTable(
+  'pre_member_history',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    preMemberId: bigintId('pre_member_id').notNull(),
+    action: text('action').$type<PreMemberAction>().notNull(),
+    actorUserId: uuid('actor_user_id'),
+    at: timestamp('at', { withTimezone: true }).notNull().defaultNow(),
+    details: jsonb('details')
+      .$type<Record<string, unknown>>()
+      .notNull()
+      .default({}),
+  },
+  (t) => [
+    check(
+      'pre_member_history_action_check',
+      sql`${t.action} = ANY (ARRAY['submitted'::text, 'created'::text, 'approved'::text, 'rejected'::text, 'edited'::text, 'linked'::text, 'unlinked'::text, 'promoted'::text, 'promotion_undone'::text, 'withdrawn'::text, 'reinstated'::text])`,
+    ),
+    index('idx_pre_member_history_pre_member_id').on(t.preMemberId, t.at),
+    foreignKey({
+      name: 'pre_member_history_pre_member_id_fkey',
+      columns: [t.preMemberId],
+      foreignColumns: [preMembers.id],
+    }),
+    foreignKey({
+      name: 'pre_member_history_actor_user_id_fkey',
+      columns: [t.actorUserId],
+      foreignColumns: [authUsers.id],
+    }).onDelete('set null'),
+  ],
+);
+
 /* ─── Songbook ───────────────────────────────────────────── */
 
 export const categories = pgTable('categories', {
@@ -281,6 +521,14 @@ export const songViews = pgTable(
 /* ─── Events & attendance ────────────────────────────────── */
 
 export const RECURRENCES = ['weekly', 'biweekly', 'monthly'] as const;
+
+/**
+ * Who an event or notice is for. Members see 'members' and 'everyone',
+ * pre-members 'pre_members' and 'everyone', staff all. Rules in
+ * lib/permissions.ts, expected people at an event in lib/expected-people.ts.
+ */
+export const AUDIENCES = ['members', 'pre_members', 'everyone'] as const;
+export type Audience = (typeof AUDIENCES)[number];
 export type Recurrence = (typeof RECURRENCES)[number];
 
 export const events = pgTable(
@@ -312,8 +560,13 @@ export const events = pgTable(
     // marked absent (method 'auto_close') and check-in stopped.
     closedAt: timestamp('closed_at', { withTimezone: true }),
     closedBy: uuid('closed_by'),
+    audience: text('audience').$type<Audience>().notNull().default('members'),
   },
   (t) => [
+    check(
+      'events_audience_check',
+      sql`${t.audience} = ANY (ARRAY['members'::text, 'pre_members'::text, 'everyone'::text])`,
+    ),
     check(
       'events_check_in_window_check',
       sql`${t.checkInOpensBeforeMin} BETWEEN 0 AND 720 AND ${t.checkInClosesAfterMin} BETWEEN 0 AND 720`,
@@ -357,7 +610,9 @@ export const attendance = pgTable(
   {
     id: uuid('id').primaryKey().defaultRandom(),
     eventId: uuid('event_id').notNull(),
-    memberId: bigintId('member_id').notNull(),
+    // Exactly one of member_id / pre_member_id is set.
+    memberId: bigintId('member_id'),
+    preMemberId: bigintId('pre_member_id'),
     status: text('status').$type<AttendanceStatus>().notNull(),
     markedBy: uuid('marked_by'),
     createdAt: createdAt(),
@@ -368,6 +623,14 @@ export const attendance = pgTable(
   },
   (t) => [
     unique('attendance_event_id_member_id_key').on(t.eventId, t.memberId),
+    unique('attendance_event_id_pre_member_id_key').on(
+      t.eventId,
+      t.preMemberId,
+    ),
+    check(
+      'attendance_one_person_check',
+      sql`(${t.memberId} IS NULL) <> (${t.preMemberId} IS NULL)`,
+    ),
     check(
       'attendance_status_check',
       sql`${t.status} = ANY (ARRAY['present'::text, 'absent'::text, 'late'::text])`,
@@ -378,6 +641,7 @@ export const attendance = pgTable(
     ),
     index('idx_attendance_event_id').on(t.eventId),
     index('idx_attendance_member_id').on(t.memberId),
+    index('idx_attendance_pre_member_id').on(t.preMemberId),
     foreignKey({
       name: 'attendance_event_id_fkey',
       columns: [t.eventId],
@@ -387,6 +651,11 @@ export const attendance = pgTable(
       name: 'attendance_member_id_fkey',
       columns: [t.memberId],
       foreignColumns: [members.id],
+    }),
+    foreignKey({
+      name: 'attendance_pre_member_id_fkey',
+      columns: [t.preMemberId],
+      foreignColumns: [preMembers.id],
     }),
     foreignKey({
       name: 'attendance_marked_by_fkey',
@@ -453,9 +722,11 @@ export const donations = pgTable(
 /* ─── Member link requests ───────────────────────────────── */
 
 /**
- * A signed-in user asks to be linked to a member record (members.member_id).
- * An admin approves or rejects it; approval sets members.auth_user_id.
- * Member ids are sequential, so linking is never automatic.
+ * A signed-in user asks to be linked to a member record (members.member_id)
+ * or to a pre-member record (pre_members.code): exactly one of member_id /
+ * pre_member_id is set. An admin approves or rejects it; approval sets
+ * members.auth_user_id or pre_members.auth_user_id. Ids are sequential, so
+ * linking is never automatic.
  */
 export const LINK_REQUEST_STATUSES = [
   'pending',
@@ -469,7 +740,8 @@ export const memberLinkRequests = pgTable(
   {
     id: uuid('id').primaryKey().defaultRandom(),
     userId: uuid('user_id').notNull(),
-    memberId: bigintId('member_id').notNull(),
+    memberId: bigintId('member_id'),
+    preMemberId: bigintId('pre_member_id'),
     status: text('status')
       .$type<LinkRequestStatus>()
       .notNull()
@@ -485,6 +757,10 @@ export const memberLinkRequests = pgTable(
       'member_link_requests_status_check',
       sql`${t.status} = ANY (ARRAY['pending'::text, 'approved'::text, 'rejected'::text])`,
     ),
+    check(
+      'member_link_requests_one_record_check',
+      sql`(${t.memberId} IS NULL) <> (${t.preMemberId} IS NULL)`,
+    ),
     // At most one open request per account.
     uniqueIndex('member_link_requests_one_pending_per_user')
       .on(t.userId)
@@ -499,6 +775,11 @@ export const memberLinkRequests = pgTable(
       name: 'member_link_requests_member_id_fkey',
       columns: [t.memberId],
       foreignColumns: [members.id],
+    }).onDelete('cascade'),
+    foreignKey({
+      name: 'member_link_requests_pre_member_id_fkey',
+      columns: [t.preMemberId],
+      foreignColumns: [preMembers.id],
     }).onDelete('cascade'),
     foreignKey({
       name: 'member_link_requests_decided_by_fkey',
@@ -538,6 +819,7 @@ export const notices = pgTable(
       .notNull()
       .default('general'),
     departmentId: bigintId('department_id'),
+    audience: text('audience').$type<Audience>().notNull().default('members'),
     // Image in the media store ("notices/<uuid>.<ext>").
     imageKey: text('image_key'),
     pinned: boolean('pinned').notNull().default(false),
@@ -552,6 +834,10 @@ export const notices = pgTable(
       .defaultNow(),
   },
   (t) => [
+    check(
+      'notices_audience_check',
+      sql`${t.audience} = ANY (ARRAY['members'::text, 'pre_members'::text, 'everyone'::text])`,
+    ),
     check(
       'notices_category_check',
       sql`${t.category} = ANY (ARRAY['general'::text, 'urgent'::text, 'event'::text, 'liturgical'::text, 'fundraising'::text, 'community'::text])`,

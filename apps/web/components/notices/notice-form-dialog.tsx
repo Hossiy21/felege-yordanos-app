@@ -34,6 +34,8 @@ import {
   type NoticeView,
 } from '@/lib/notices';
 import { cn } from '@/lib/utils';
+import type { Audience } from '@/lib/audience';
+import { AudienceField } from '@/components/forms/audience-field';
 import { createNotice, updateNotice } from '@/app/(admin)/admin/notices/actions';
 import { NOTICE_CATEGORY_META, NoticeCategoryChip, UnreadDot } from './notice-category';
 
@@ -181,6 +183,9 @@ function NoticeForm({
   const [preview, setPreview] = useState<string | null>(null);
   const [removeImage, setRemoveImage] = useState(false);
   const [pinned, setPinned] = useState(notice?.pinned ?? false);
+  const [audience, setAudience] = useState<Audience>(
+    notice?.audience ?? 'members',
+  );
   const [expiresOn, setExpiresOn] = useState(
     notice?.expiresAt ? expiryToDate(notice.expiresAt) : '',
   );
@@ -251,6 +256,7 @@ function NoticeForm({
     formData.set('summary', summary);
     formData.set('body', body);
     formData.set('departmentId', dept === EVERYONE ? '' : dept);
+    formData.set('audience', audience);
     if (pinned) formData.set('pinned', 'on');
     formData.set('expiresOn', expiresOn);
     if (withPhoto && image) formData.set('image', image);
@@ -401,6 +407,9 @@ function NoticeForm({
               className={cn(FIELD, 'min-h-[150px] resize-y leading-[1.7]')}
             />
           </div>
+
+          {/* Who sees it: members, pre-members or both */}
+          <AudienceField value={audience} onChange={setAudience} />
 
           {/* For (department) + end date */}
           <div className="grid gap-5 sm:grid-cols-2">

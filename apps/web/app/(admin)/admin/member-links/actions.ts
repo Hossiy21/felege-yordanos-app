@@ -8,6 +8,8 @@ import {
   db,
   memberLinkRequests,
   members,
+  preMemberHistory,
+  preMembers,
   profiles,
 } from '@felege-yordanos/db/server';
 import { fail, NOT_ALLOWED, ok, type ActionResult } from '@/lib/action-result';
@@ -19,9 +21,14 @@ type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
 const MEMBER_TAKEN = 'This member record is already linked to another account.';
 const ACCOUNT_LINKED = 'This account is already linked to a member record.';
+const PRE_MEMBER_TAKEN =
+  'This pre-member record is already linked to another account.';
+const ACCOUNT_LINKED_PRE =
+  'This account is already linked to a pre-member record.';
 
 function revalidate() {
   revalidatePath('/admin/member-links');
+  revalidatePath('/admin/pre-members', 'layout');
   revalidatePath('/admin/users');
   revalidatePath('/claim');
   revalidatePath('/', 'layout');
@@ -43,6 +50,13 @@ async function link(
     .where(eq(members.authUserId, userId))
     .limit(1);
   if (account) return ACCOUNT_LINKED;
+  // A pre-member account becomes a member account through promotion.
+  const [preAccount] = await tx
+    .select({ id: preMembers.id })
+    .from(preMembers)
+    .where(eq(preMembers.authUserId, userId))
+    .limit(1);
+  if (preAccount) return ACCOUNT_LINKED_PRE;
 
   const updated = await tx
     .update(members)
@@ -95,6 +109,83 @@ async function link(
   return null;
 }
 
+/**
+ * Links `userId` to pre-member `preMemberId` inside `tx` (active records
+ * only), closes the request and logs 'linked' in the pre-member's history.
+ * Returns an error message, or null when linked.
+ */
+async function linkPreMember(
+  tx: Tx,
+  userId: string,
+  preMemberId: number,
+  adminId: string,
+): Promise<string | null> {
+  const [memberAccount] = await tx
+    .select({ id: members.id })
+    .from(members)
+    .where(eq(members.authUserId, userId))
+    .limit(1);
+  if (memberAccount) return ACCOUNT_LINKED;
+  const [preAccount] = await tx
+    .select({ id: preMembers.id })
+    .from(preMembers)
+    .where(eq(preMembers.authUserId, userId))
+    .limit(1);
+  if (preAccount) return ACCOUNT_LINKED_PRE;
+
+  const now = new Date();
+  const updated = await tx
+    .update(preMembers)
+    .set({ authUserId: userId, updatedAt: now })
+    .where(
+      and(
+        eq(preMembers.id, preMemberId),
+        isNull(preMembers.authUserId),
+        eq(preMembers.status, 'active'),
+      ),
+    )
+    .returning({ code: preMembers.code });
+  if (updated.length === 0) return PRE_MEMBER_TAKEN;
+
+  const [account] = await tx
+    .select({ email: authUsers.email })
+    .from(authUsers)
+    .where(eq(authUsers.id, userId))
+    .limit(1);
+  await tx.insert(preMemberHistory).values({
+    preMemberId,
+    action: 'linked',
+    actorUserId: adminId,
+    details: { userId, email: account?.email ?? null },
+  });
+
+  await tx
+    .update(memberLinkRequests)
+    .set({ status: 'approved', decidedBy: adminId, decidedAt: now })
+    .where(
+      and(
+        eq(memberLinkRequests.userId, userId),
+        eq(memberLinkRequests.status, 'pending'),
+      ),
+    );
+  await tx
+    .update(memberLinkRequests)
+    .set({
+      status: 'rejected',
+      note: 'Linked to another account. Contact an admin if this is your ID.',
+      decidedBy: adminId,
+      decidedAt: now,
+    })
+    .where(
+      and(
+        eq(memberLinkRequests.preMemberId, preMemberId),
+        eq(memberLinkRequests.status, 'pending'),
+        ne(memberLinkRequests.userId, userId),
+      ),
+    );
+  return null;
+}
+
 const idSchema = z.string().uuid();
 
 /** Approves an open request: links the account to the requested member record. */
@@ -110,6 +201,7 @@ export async function approveLinkRequest(
       .select({
         userId: memberLinkRequests.userId,
         memberId: memberLinkRequests.memberId,
+        preMemberId: memberLinkRequests.preMemberId,
       })
       .from(memberLinkRequests)
       .where(
@@ -120,6 +212,9 @@ export async function approveLinkRequest(
       )
       .limit(1);
     if (!request) return 'This request was already handled.';
+    if (request.preMemberId !== null)
+      return linkPreMember(tx, request.userId, request.preMemberId, admin.id);
+    if (request.memberId === null) return 'This request was already handled.';
     return link(tx, request.userId, request.memberId, admin.id);
   });
   if (error) return fail(error);

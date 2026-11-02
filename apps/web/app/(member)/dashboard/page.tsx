@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, gte, lt, sum } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, inArray, lt, sum, type SQL } from 'drizzle-orm';
 import {
   db,
   departments as departmentsTable,
@@ -7,14 +7,19 @@ import {
   memberLinkRequests,
   members,
   songViews,
+  preMembers,
   songs as songsTable,
 } from '@felege-yordanos/db/server';
 import { Card } from '@/components/ds';
 import { todayYmd } from '@/lib/events';
 import { getLocale } from '@/lib/i18n/server';
 import { listNotices } from '@/lib/notice-queries';
-import { canViewNotices } from '@/lib/permissions';
-import { hasMemberAccess, requireUser } from '@/lib/session';
+import { canViewNotices, visibleAudiences } from '@/lib/permissions';
+import {
+  hasMemberAccess,
+  hasPreMemberAccess,
+  requireUser,
+} from '@/lib/session';
 import { EventFeed } from './event-feed';
 import { WelcomeBanner } from './cards/welcome-banner';
 import { MyGivingCard } from './cards/my-giving-card';
@@ -26,6 +31,7 @@ import {
 } from './cards/link-profile-prompt';
 import { QuickActions } from './cards/quick-actions';
 import { NoticesCard } from './cards/notices-card';
+import { MemberQRCard } from '../profile/member-qr-card';
 
 /** Columns the event feed and welcome banner need. */
 const eventColumns = {
@@ -40,8 +46,16 @@ const eventColumns = {
 
 export default async function MemberDashboard() {
   const [user, locale] = await Promise.all([requireUser(), getLocale()]);
-  // Events and giving are for verified, linked members (and staff) only.
+  // Giving is for verified, linked members (and staff) only; events also
+  // for active pre-members (their audience only).
   const access = hasMemberAccess(user);
+  const preMember = !access && hasPreMemberAccess(user);
+  const eventAccess = access || preMember;
+  const audiences = visibleAudiences(user);
+  const forMe = (dateFilter: SQL) =>
+    audiences === null
+      ? dateFilter
+      : and(dateFilter, inArray(events.audience, audiences));
   const staffRole = user.assignedRole !== 'member';
 
   const today = todayYmd();
@@ -75,19 +89,19 @@ export default async function MemberDashboard() {
       .from(members)
       .where(eq(members.authUserId, user.id))
       .limit(1),
-    access
+    eventAccess && audiences?.length !== 0
       ? db
           .select(eventColumns)
           .from(events)
-          .where(gte(events.eventDate, today))
+          .where(forMe(gte(events.eventDate, today)))
           .orderBy(asc(events.eventDate))
           .limit(10)
       : Promise.resolve([]),
-    access
+    eventAccess && audiences?.length !== 0
       ? db
           .select(eventColumns)
           .from(events)
-          .where(lt(events.eventDate, today))
+          .where(forMe(lt(events.eventDate, today)))
           .orderBy(desc(events.eventDate))
           .limit(5)
       : Promise.resolve([]),
@@ -145,13 +159,30 @@ export default async function MemberDashboard() {
     db.$count(songsTable),
     // Latest active notices (members never see expired ones here).
     canViewNotices(user)
-      ? listNotices({ userId: user.id, includeExpired: false, limit: 3 })
+      ? listNotices({
+          userId: user.id,
+          includeExpired: false,
+          audiences,
+          limit: 3,
+        })
       : Promise.resolve([]),
   ]);
+
+  // An active pre-member's ID (FYP code) for the QR card.
+  const [pre] =
+    preMember && user.preMemberRecordId !== null
+      ? await db
+          .select({ code: preMembers.code })
+          .from(preMembers)
+          .where(eq(preMembers.id, user.preMemberRecordId))
+          .limit(1)
+      : [];
+  const preCode = pre?.code ?? null;
 
   // Open link request: the prompt says "waiting for approval" instead.
   const linkPending =
     !member &&
+    !preMember &&
     (await db.$count(
       memberLinkRequests,
       and(
@@ -178,7 +209,7 @@ export default async function MemberDashboard() {
 
   const hero = {
     firstName,
-    memberId: member?.memberId ?? null,
+    memberId: member?.memberId ?? preCode,
     memberDeptName,
     nextEvent,
   };
@@ -191,18 +222,24 @@ export default async function MemberDashboard() {
         {!user.emailVerified ? (
           <VerifyEmailPrompt className="mt-3.5" staff={staffRole} />
         ) : (
-          !member && (
+          !member &&
+          !preMember && (
             <LinkProfilePrompt className="mt-3.5" pending={linkPending} />
           )
         )}
-        <QuickActions songCount={songCount} />
+        {preCode && (
+          <div className="mt-3.5">
+            <MemberQRCard memberId={preCode} variant="pre_member" />
+          </div>
+        )}
+        <QuickActions songCount={songCount} preMember={preMember} />
         <div className="mt-4">
           <SongbookPreviewCard songs={previewSongs} />
         </div>
         {canViewNotices(user) && (
           <NoticesCard notices={latestNotices} className="mt-4" />
         )}
-        {access && (
+        {eventAccess && (
           <EventFeed
             upcoming={upcoming}
             past={past}
@@ -218,13 +255,14 @@ export default async function MemberDashboard() {
         {!user.emailVerified ? (
           <VerifyEmailPrompt className="mt-4" staff={staffRole} />
         ) : (
-          !member && (
+          !member &&
+          !preMember && (
             <LinkProfilePrompt className="mt-4" pending={linkPending} />
           )
         )}
 
         <div className="mt-4 grid grid-cols-[minmax(0,1.65fr)_minmax(0,1fr)] items-start gap-4">
-          {access ? (
+          {eventAccess ? (
             <Card>
               <EventFeed
                 upcoming={upcoming}
@@ -239,7 +277,8 @@ export default async function MemberDashboard() {
 
           <div className="flex flex-col gap-4">
             {canViewNotices(user) && <NoticesCard notices={latestNotices} />}
-            {access && <SongbookPreviewCard songs={previewSongs} />}
+            {preCode && <CheckInCard memberId={preCode} variant="pre_member" />}
+            {eventAccess && <SongbookPreviewCard songs={previewSongs} />}
             {access && (
               <MyGivingCard
                 total={verifiedThisYear}

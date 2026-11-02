@@ -18,6 +18,7 @@ export default async function ManageNoticesPage() {
       userId: user.id,
       includeExpired: true,
       departmentId: isAdmin(user) ? undefined : user.departmentId,
+      audiences: null,
     }),
     postableDepartments(user),
   ]);

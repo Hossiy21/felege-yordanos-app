@@ -15,8 +15,11 @@ import type {
   SummaryRecord,
   SummaryStatus,
 } from '@/lib/event-summary';
+import type { Audience, PersonKind } from '@/lib/audience';
+import { AudienceTag } from '@/components/forms/audience-tag';
 import { useLocale, useT } from '@/lib/i18n/client';
 import { cn } from '@/lib/utils';
+import { PreMemberBadge } from '@/components/pre-members/pre-member-badge';
 import { MemberIdText } from './check-in-tabs';
 
 interface SummaryEvent {
@@ -27,6 +30,7 @@ interface SummaryEvent {
   departmentId: number | null;
   department: { nameEn: string; nameAm: string } | null;
   closedAt: string;
+  audience: Audience;
 }
 
 /** Record filter: a computed status, or everyone. */
@@ -82,6 +86,9 @@ export function EventSummaryView({
   const locale = useLocale();
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState<RecordFilter>('all');
+  // Members and pre-members apart (only when the event has both).
+  const [kind, setKind] = useState<'all' | PersonKind>('all');
+  const mixed = s.groups.length > 1;
   const [page, setPage] = useState(0);
 
   // ── Header ──
@@ -106,12 +113,14 @@ export function EventSummaryView({
   // ── Records ──
   const searched = useMemo(() => {
     const q = search.trim().toLowerCase();
-    if (!q) return s.records;
-    return s.records.filter(
+    const ofKind =
+      kind === 'all' ? s.records : s.records.filter((r) => r.kind === kind);
+    if (!q) return ofKind;
+    return ofKind.filter(
       (r) =>
         r.name.toLowerCase().includes(q) || r.memberId.toLowerCase().includes(q),
     );
-  }, [s.records, search]);
+  }, [s.records, search, kind]);
 
   const counts = useMemo(() => {
     const c: Record<RecordFilter, number> = {
@@ -151,13 +160,25 @@ export function EventSummaryView({
       no_time: 'Present (no time)',
     };
     const lines = [
-      ['Member ID', 'Name', 'Checked in', 'Minutes vs start', 'Method', 'Status', 'Tapped'].join(','),
+      [
+        'Member ID',
+        'Name',
+        ...(event.audience !== 'members' ? ['Type'] : []),
+        'Checked in',
+        'Minutes vs start',
+        'Method',
+        'Status',
+        'Tapped',
+      ].join(','),
     ];
     for (const r of s.records)
       lines.push(
         [
           r.memberId,
           r.name,
+          ...(event.audience !== 'members'
+            ? [r.kind === 'pre_member' ? 'Pre-member' : 'Member']
+            : []),
           r.checkedInAt ? eatTime(new Date(r.checkedInAt)) : '',
           r.minutesVsStart === null ? '' : String(r.minutesVsStart),
           r.method ? METHOD_LABEL[r.method] : '',
@@ -233,7 +254,7 @@ export function EventSummaryView({
           </div>
           <div className="mt-2.5 flex items-baseline justify-between gap-2">
             <div className="flex items-baseline gap-1.5">
-              <span className="font-display text-[36px] font-medium leading-[0.9] tabular-nums text-cream md:text-[46px]">
+              <span className="font-display text-[36px] font-medium leading-[0.9] tabular-nums lining-nums text-cream md:text-[46px]">
                 {s.attended}
               </span>
               <span className="font-mono text-[12px] text-gold-light/80 md:text-[14px]">
@@ -281,6 +302,38 @@ export function EventSummaryView({
           b: s.absentOnClose,
         })}
       />
+    </div>
+  );
+
+  /** Members and pre-members apart, when the event had both. */
+  const groupsCard = mixed && (
+    <div className="mt-2.5 grid grid-cols-1 gap-2.5 md:mt-4 md:grid-cols-2 md:gap-4">
+      {s.groups.map((g) => (
+        <Card key={g.kind} className="flex items-center justify-between gap-3 rounded-xl px-4 py-3.5 md:px-[22px]">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2">
+              <span className="text-[12.5px] font-semibold text-ink">
+                {t(g.kind === 'member' ? 'Members' : 'Pre-members')}
+              </span>
+              {g.kind === 'pre_member' && <PreMemberBadge />}
+            </div>
+            <div className="mt-0.5 text-[11px] text-ink-muted">
+              {t('{a} on time · {b} late · {c} absent', {
+                a: g.onTime,
+                b: g.late,
+                c: g.absent,
+              })}
+            </div>
+          </div>
+          <div className="shrink-0 text-right">
+            <span className="font-display text-[26px] font-medium leading-none tabular-nums lining-nums text-brand-ink">
+              {g.attended}
+            </span>
+            <span className="font-mono text-[11px] text-ink-muted"> / {g.total}</span>
+            <div className="font-mono text-[10.5px] text-ink-muted">{g.attendedPct}%</div>
+          </div>
+        </Card>
+      ))}
     </div>
   );
 
@@ -433,6 +486,29 @@ export function EventSummaryView({
         {searchBox('w-full md:w-[272px]')}
       </div>
 
+      {mixed && (
+        <div
+          role="group"
+          aria-label={t('Filter by type')}
+          className="mt-3.5 flex gap-1.5"
+        >
+          {(['all', 'member', 'pre_member'] as const).map((k) => (
+            <Chip
+              key={k}
+              active={kind === k}
+              aria-pressed={kind === k}
+              amharic={locale === 'am'}
+              onClick={() => {
+                setKind(k);
+                setPage(0);
+              }}
+            >
+              {t(k === 'all' ? 'Everyone' : k === 'member' ? 'Members' : 'Pre-members')}
+            </Chip>
+          ))}
+        </div>
+      )}
+
       <div
         role="group"
         aria-label={t('Filter by status')}
@@ -486,11 +562,14 @@ export function EventSummaryView({
             </div>
             {pageRows.map((r) => (
               <div
-                key={r.id}
+                key={r.key}
                 className={cn('grid items-center gap-3 border-b border-parchment-edge px-1 py-2.5', COLS)}
               >
                 <MemberIdText memberId={r.memberId} />
-                <span className="truncate text-[13px] font-medium text-ink">{r.name}</span>
+                <span className="flex min-w-0 items-center gap-2">
+                  <span className="truncate text-[13px] font-medium text-ink">{r.name}</span>
+                  {r.kind === 'pre_member' && <PreMemberBadge />}
+                </span>
                 <span className="font-mono text-[11.5px] tabular-nums text-ink">
                   {timeOf(r.checkedInAt)}
                 </span>
@@ -507,13 +586,16 @@ export function EventSummaryView({
           <div className="mt-3 flex flex-col gap-1.5 md:hidden">
             {pageRows.map((r) => (
               <div
-                key={r.id}
+                key={r.key}
                 className="rounded-lg border border-parchment-edge bg-parchment px-3 py-2.5 dark:bg-parchment-deep"
               >
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0">
                     <div className="truncate text-[13px] font-medium text-ink">{r.name}</div>
-                    <MemberIdText memberId={r.memberId} />
+                    <div className="flex items-center gap-1.5">
+                      <MemberIdText memberId={r.memberId} />
+                      {r.kind === 'pre_member' && <PreMemberBadge />}
+                    </div>
                   </div>
                   <div className="shrink-0">{statusPill(r)}</div>
                 </div>
@@ -603,6 +685,7 @@ export function EventSummaryView({
           <div className="mt-2 flex flex-wrap items-center gap-x-2.5 gap-y-1.5">
             <span className="text-[12.5px] text-ink-muted">{dateLine}</span>
             <DeptChip label={deptShortLabel(event.departmentId, locale)} title={deptName} />
+            <AudienceTag audience={event.audience} />
             <span className="flex items-center gap-1.5 text-[11px]">
               <span aria-hidden className="h-1.5 w-1.5 rounded-full bg-ink-muted" />
               <span className="font-semibold text-ink">{t('Closed')}</span>
@@ -614,6 +697,7 @@ export function EventSummaryView({
       </div>
 
       {statCards}
+      {groupsCard}
       {legacyNote}
 
       <div className="mt-3 grid grid-cols-1 gap-3 md:mt-4 md:gap-4 lg:grid-cols-[minmax(0,1.7fr)_minmax(0,1fr)]">
@@ -650,7 +734,7 @@ function StatCard({
         <span aria-hidden className={cn('h-1.5 w-1.5 rounded-full', dot)} />
         {label}
       </div>
-      <div className="mt-2.5 font-display text-[36px] font-medium leading-[0.9] tabular-nums text-brand-ink md:text-[42px]">
+      <div className="mt-2.5 font-display text-[36px] font-medium leading-[0.9] tabular-nums lining-nums text-brand-ink md:text-[42px]">
         {value}
       </div>
       <div className="mt-2.5 text-[11px] leading-snug text-ink-muted md:text-[11.5px]">{sub}</div>

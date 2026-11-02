@@ -21,10 +21,14 @@ import { useToast } from '@/hooks/use-toast';
 import { useLocale, useT } from '@/lib/i18n/client';
 import { formatYmd, hhmm } from '@/lib/events';
 import { eatDate, eatTime } from '@/lib/check-in-window';
-import { MEMBER_ID_PREFIX, normalizeMemberId } from '@/lib/member-id';
+import type { Audience, ExpectedPerson } from '@/lib/audience';
+import { MEMBER_ID_PREFIX } from '@/lib/member-id';
+import { classifyScanCode, scanLookupKey } from '@/lib/scan-code';
+import { PreMemberBadge } from '@/components/pre-members/pre-member-badge';
 import { cn } from '@/lib/utils';
 import {
   clearAttendance,
+  explainCheckInCode,
   getEventAttendance,
   markAttendance,
   type TapMethod,
@@ -39,16 +43,12 @@ import { QRScanner, type ScanResult } from './qr-scanner';
 
 type AttendanceStatus = 'present' | 'absent' | 'late';
 
-/** The member fields the check-in screens need. */
-export interface CheckInMember {
-  id: number;
-  memberId: string;
-  name: string;
-  fatherName: string;
-}
+/** One person on the check-in list (member or pre-member). */
+export type CheckInMember = ExpectedPerson;
 
 export interface CheckInAttendance {
-  memberId: number;
+  /** Person key ("m:12", "p:3"; lib/audience.ts). */
+  key: string;
   status: AttendanceStatus;
 }
 
@@ -63,8 +63,11 @@ export interface CheckInEvent {
 
 interface CheckInTabsProps {
   eventId: string;
-  members: CheckInMember[];
+  /** Who is expected (lib/expected-people.ts), by name. */
+  people: CheckInMember[];
   attendance: CheckInAttendance[];
+  /** Who the event is for: decides the wording and the refusals. */
+  audience: Audience;
   event: CheckInEvent;
   /** Phone back link (English label, translated here). */
   back: { href: string; label: string };
@@ -87,8 +90,9 @@ interface CheckInTabsProps {
 }
 
 interface CheckInLog {
-  /** Members row id (for Undo). */
-  id: number;
+  /** Person key (for Undo). */
+  key: string;
+  preMember: boolean;
   name: string;
   memberId: string;
   time: string;
@@ -203,16 +207,15 @@ const MOBILE_MIN_ROWS = 3;
 /** How often the screen fetches check-ins made on other devices. */
 const SYNC_INTERVAL_MS = 15_000;
 
-/** Lookup key for a typed or scanned member ID ("42" -> "ssu/01/03/05/00042"). */
-const memberKey = (input: string) => normalizeMemberId(input).toLowerCase();
 
 type MobileTab = 'quick' | 'member-list' | 'qr-scan';
 type DeskEntry = 'quick' | 'qr' | 'list';
 
 export function CheckInTabs({
   eventId,
-  members,
+  people: members,
   attendance,
+  audience,
   event,
   back,
   picker,
@@ -225,10 +228,10 @@ export function CheckInTabs({
   const locale = useLocale();
   const router = useRouter();
   const [tab, setTab] = useState<MobileTab>('quick');
-  const [records, setRecords] = useState<Record<number, AttendanceStatus>>(
+  const [records, setRecords] = useState<Record<string, AttendanceStatus>>(
     () => {
-      const map: Record<number, AttendanceStatus> = {};
-      for (const a of attendance) map[a.memberId] = a.status;
+      const map: Record<string, AttendanceStatus> = {};
+      for (const a of attendance) map[a.key] = a.status;
       return map;
     },
   );
@@ -285,11 +288,17 @@ export function CheckInTabs({
     deskQuickRef.current?.focus();
   }, []);
 
+  // Scanned or typed code -> person (member IDs and FYP codes).
   const membersByMemberId = useMemo(() => {
     const map = new Map<string, CheckInMember>();
-    for (const m of members) map.set(m.memberId.toLowerCase(), m);
+    for (const m of members) map.set(m.code.toLowerCase(), m);
     return map;
   }, [members]);
+  const findByCode = (input: string) => {
+    const key = scanLookupKey(input);
+    return key ? membersByMemberId.get(key) : undefined;
+  };
+  const membersOnly = audience === 'members';
 
   // Latest records for callbacks, when this device last changed each member,
   // and how many saves per member are still on their way to the server (so a
@@ -298,17 +307,17 @@ export function CheckInTabs({
   useEffect(() => {
     recordsRef.current = records;
   }, [records]);
-  const localEdits = useRef(new Map<number, number>());
-  const inFlight = useRef(new Map<number, number>());
+  const localEdits = useRef(new Map<string, number>());
+  const inFlight = useRef(new Map<string, number>());
   const track = useCallback(
-    async <T,>(memberId: number, save: () => Promise<T>): Promise<T> => {
-      inFlight.current.set(memberId, (inFlight.current.get(memberId) ?? 0) + 1);
+    async <T,>(key: string, save: () => Promise<T>): Promise<T> => {
+      inFlight.current.set(key, (inFlight.current.get(key) ?? 0) + 1);
       try {
         return await save();
       } finally {
-        const left = (inFlight.current.get(memberId) ?? 1) - 1;
-        if (left > 0) inFlight.current.set(memberId, left);
-        else inFlight.current.delete(memberId);
+        const left = (inFlight.current.get(key) ?? 1) - 1;
+        if (left > 0) inFlight.current.set(key, left);
+        else inFlight.current.delete(key);
       }
     },
     [],
@@ -337,9 +346,9 @@ export function CheckInTabs({
       // The server list is the truth: marks cleared here or on another
       // device drop out. Only this device's own newer or unsaved taps win.
       setRecords((prev) => {
-        const next: Record<number, AttendanceStatus> = {};
-        for (const a of res.data.rows) next[a.memberId] = a.status;
-        const keep = (id: number) => {
+        const next: Record<string, AttendanceStatus> = {};
+        for (const a of res.data.rows) next[a.key] = a.status;
+        const keep = (id: string) => {
           if (prev[id]) next[id] = prev[id];
           else delete next[id];
         };
@@ -400,12 +409,12 @@ export function CheckInTabs({
   const progress = total ? Math.min(100, (presentCount / total) * 100) : 0;
 
   // Which tab this device last marked each member from (for Undo).
-  const lastMethod = useRef(new Map<number, TapMethod>());
+  const lastMethod = useRef(new Map<string, TapMethod>());
 
   // Optimistic: the button changes at once; on failure it goes back and a
   // toast explains why. `method` is the tab the tap came from.
   const upsertAttendance = useCallback(
-    async (memberId: number, status: AttendanceStatus, method: TapMethod) => {
+    async (key: string, status: AttendanceStatus, method: TapMethod) => {
       if (lockedRef.current) {
         toast({
           title: t('Check-in is closed'),
@@ -414,22 +423,22 @@ export function CheckInTabs({
         });
         return false;
       }
-      const previous = recordsRef.current[memberId];
-      localEdits.current.set(memberId, Date.now());
-      setRecords((prev) => ({ ...prev, [memberId]: status }));
-      const res = await track(memberId, () =>
-        markAttendance({ eventId, memberId, status, method }),
+      const previous = recordsRef.current[key];
+      localEdits.current.set(key, Date.now());
+      setRecords((prev) => ({ ...prev, [key]: status }));
+      const res = await track(key, () =>
+        markAttendance({ eventId, personKey: key, status, method }),
       ).catch(() => ({
         ok: false as const,
         error: 'Could not save attendance. Please try again.',
       }));
       if (!res.ok) {
-        localEdits.current.set(memberId, Date.now());
+        localEdits.current.set(key, Date.now());
         setRecords((prev) => {
-          if (prev[memberId] !== status) return prev; // a newer tap won
+          if (prev[key] !== status) return prev; // a newer tap won
           const next = { ...prev };
-          if (previous) next[memberId] = previous;
-          else delete next[memberId];
+          if (previous) next[key] = previous;
+          else delete next[key];
           return next;
         });
         toast({
@@ -439,7 +448,7 @@ export function CheckInTabs({
         });
         return false;
       }
-      lastMethod.current.set(memberId, method);
+      lastMethod.current.set(key, method);
       return true;
     },
     [eventId, toast, t, track],
@@ -448,7 +457,7 @@ export function CheckInTabs({
   // Clears a mark (back to "not marked"), optimistic like upsertAttendance,
   // then offers Undo, which puts the previous status back.
   const clearMark = useCallback(
-    async (memberId: number, name: string) => {
+    async (key: string, name: string) => {
       if (lockedRef.current) {
         toast({
           title: t('Check-in is closed'),
@@ -457,24 +466,24 @@ export function CheckInTabs({
         });
         return false;
       }
-      const previous = recordsRef.current[memberId];
+      const previous = recordsRef.current[key];
       if (!previous) return false;
-      localEdits.current.set(memberId, Date.now());
+      localEdits.current.set(key, Date.now());
       setRecords((prev) => {
         const next = { ...prev };
-        delete next[memberId];
+        delete next[key];
         return next;
       });
-      const res = await track(memberId, () =>
-        clearAttendance({ eventId, memberId }),
+      const res = await track(key, () =>
+        clearAttendance({ eventId, personKey: key }),
       ).catch(() => ({
         ok: false as const,
         error: 'Could not clear attendance. Please try again.',
       }));
       if (!res.ok) {
-        localEdits.current.set(memberId, Date.now());
+        localEdits.current.set(key, Date.now());
         setRecords((prev) =>
-          prev[memberId] ? prev : { ...prev, [memberId]: previous },
+          prev[key] ? prev : { ...prev, [key]: previous },
         );
         toast({
           title: t('Error'),
@@ -483,7 +492,7 @@ export function CheckInTabs({
         });
         return false;
       }
-      setCheckInLogs((prev) => prev.filter((log) => log.id !== memberId));
+      setCheckInLogs((prev) => prev.filter((log) => log.key !== key));
       toast({
         title: name,
         description: t('Cleared'),
@@ -493,9 +502,9 @@ export function CheckInTabs({
             altText={t('Undo')}
             onClick={() =>
               void upsertAttendance(
-                memberId,
+                key,
                 previous,
-                lastMethod.current.get(memberId) ?? 'list',
+                lastMethod.current.get(key) ?? 'list',
               )
             }
           >
@@ -515,7 +524,7 @@ export function CheckInTabs({
       (m) =>
         m.name.toLowerCase().includes(q) ||
         m.fatherName?.toLowerCase().includes(q) ||
-        m.memberId.toLowerCase().includes(q) ||
+        m.code.toLowerCase().includes(q) ||
         fullName(m).toLowerCase().includes(q),
     );
   }, [members, search]);
@@ -529,7 +538,7 @@ export function CheckInTabs({
       absent: 0,
       unmarked: 0,
     };
-    for (const m of searchedMembers) counts[records[m.id] ?? 'unmarked'] += 1;
+    for (const m of searchedMembers) counts[records[m.key] ?? 'unmarked'] += 1;
     return counts;
   }, [searchedMembers, records]);
 
@@ -538,7 +547,7 @@ export function CheckInTabs({
       statusFilter === 'all'
         ? searchedMembers
         : searchedMembers.filter(
-            (m) => (records[m.id] ?? 'unmarked') === statusFilter,
+            (m) => (records[m.key] ?? 'unmarked') === statusFilter,
           ),
     [searchedMembers, records, statusFilter],
   );
@@ -567,34 +576,35 @@ export function CheckInTabs({
     const id = quickInput.trim();
     if (!id) return;
 
-    const member = membersByMemberId.get(memberKey(id));
+    const member = findByCode(id);
     if (!member) {
+      setQuickInput('');
       toast({
         title: t('Not found'),
-        description: t('Member ID not found'),
+        description: t(await notOnListMessage(id)),
         variant: 'destructive',
       });
-      setQuickInput('');
       focusQuick();
       return;
     }
 
     const name = fullName(member);
-    if (records[member.id] === 'present' || records[member.id] === 'late') {
+    if (records[member.key] === 'present' || records[member.key] === 'late') {
       toast({ title: name, description: t('Already checked in') });
       setQuickInput('');
       focusQuick();
       return;
     }
 
-    const ok = await upsertAttendance(member.id, 'present', 'quick_id');
+    const ok = await upsertAttendance(member.key, 'present', 'quick_id');
     if (ok) {
       toast({ title: name, description: t('Checked in') });
       setCheckInLogs((prev) => [
         {
-          id: member.id,
+          key: member.key,
+          preMember: member.kind === 'pre_member',
           name,
-          memberId: member.memberId,
+          memberId: member.code,
           time: formatTime(new Date()),
           status: 'present',
         },
@@ -608,38 +618,84 @@ export function CheckInTabs({
 
   const latest = checkInLogs[0];
 
+  /**
+   * Why a code is not on this event's list. Member IDs at a members event
+   * are simply not found; anything else (FYP codes, members at a
+   * pre-members event) asks the server: not part of this event, promoted,
+   * not approved yet… Nothing is marked.
+   */
+  async function notOnListMessage(input: string): Promise<string> {
+    const c = classifyScanCode(input);
+    if (c.kind === 'invalid') return 'Member ID not found';
+    if (c.kind === 'member' && audience !== 'pre_members')
+      return 'Member ID not found';
+    const res = await explainCheckInCode({ eventId, code: input }).catch(
+      () => null,
+    );
+    return res?.ok ? res.data.message : 'Member ID not found';
+  }
+
   async function handleQRDecoded(decoded: string): Promise<ScanResult> {
     const code = decoded.trim();
-    const member = membersByMemberId.get(memberKey(code));
-    if (!member) return { kind: 'invalid', code };
-    const name = fullName(member);
-    if (records[member.id] === 'present' || records[member.id] === 'late') {
-      return { kind: 'already', name, memberId: member.memberId };
+    const member = findByCode(code);
+    if (!member) {
+      const c = classifyScanCode(code);
+      if (c.kind === 'invalid') return { kind: 'invalid', code };
+      // A real code that is not on this list: say why.
+      const message = await notOnListMessage(code);
+      return message === 'Member ID not found' && c.kind === 'member'
+        ? { kind: 'invalid', code }
+        : {
+            kind: 'refused',
+            code,
+            message,
+            preMember: c.kind === 'pre_member',
+          };
     }
-    const ok = await upsertAttendance(member.id, 'present', 'qr');
+    const name = fullName(member);
+    const preMember = member.kind === 'pre_member';
+    if (records[member.key] === 'present' || records[member.key] === 'late') {
+      return { kind: 'already', name, memberId: member.code, preMember };
+    }
+    const ok = await upsertAttendance(member.key, 'present', 'qr');
     if (!ok) return { kind: 'invalid', code };
     const time = formatTime(new Date());
     setCheckInLogs((prev) => [
       {
-        id: member.id,
+        key: member.key,
+        preMember,
         name,
-        memberId: member.memberId,
+        memberId: member.code,
         time,
         status: 'present',
       },
       ...prev.slice(0, 9),
     ]);
-    return { kind: 'success', name, memberId: member.memberId, time };
+    return { kind: 'success', name, memberId: member.code, time, preMember };
   }
 
   /** CSV of this event's attendance, built from what is on the page. */
   function exportCsv() {
     const esc = (v: string) =>
       /[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v;
-    const lines = [['Member ID', 'Name', 'Status'].join(',')];
+    // Members-only events keep the old three columns.
+    const header = membersOnly
+      ? ['Member ID', 'Name', 'Status']
+      : ['ID', 'Name', 'Type', 'Status'];
+    const lines = [header.join(',')];
     for (const m of members)
       lines.push(
-        [m.memberId, fullName(m), records[m.id] ?? ''].map(esc).join(','),
+        (membersOnly
+          ? [m.code, fullName(m), records[m.key] ?? '']
+          : [
+              m.code,
+              fullName(m),
+              m.kind === 'pre_member' ? 'Pre-member' : 'Member',
+              records[m.key] ?? '',
+            ]
+        )
+          .map(esc)
+          .join(','),
       );
     const blob = new Blob(['﻿' + lines.join('\n')], {
       type: 'text/csv;charset=utf-8',
@@ -708,7 +764,7 @@ export function CheckInTabs({
     <div className={cn('flex', size === 'sm' ? 'gap-[5px]' : 'gap-1')}>
       {STATUSES.map((status) => {
         const cfg = STATUS_BTN[status];
-        const active = records[m.id] === status;
+        const active = records[m.key] === status;
         return (
           <button
             key={status}
@@ -716,8 +772,8 @@ export function CheckInTabs({
             // Tapping the active status again clears the mark.
             onClick={() =>
               active
-                ? clearMark(m.id, fullName(m))
-                : upsertAttendance(m.id, status, 'list')
+                ? clearMark(m.key, fullName(m))
+                : upsertAttendance(m.key, status, 'list')
             }
             disabled={locked}
             aria-pressed={active}
@@ -875,7 +931,7 @@ export function CheckInTabs({
   };
 
   // Close event: department heads once the event has started, admins always.
-  const unmarkedCount = members.filter((m) => !records[m.id]).length;
+  const unmarkedCount = members.filter((m) => !records[m.key]).length;
   const closeBtn = closableFrom !== null && now >= closableFrom && (
     <CloseEventButton
       eventId={eventId}
@@ -893,10 +949,10 @@ export function CheckInTabs({
 
   /** Undo on a Recent entry: clears that mark while it is still the one shown. */
   const undoLog = (log: CheckInLog) =>
-    records[log.id] === log.status && (
+    records[log.key] === log.status && (
       <button
         type="button"
-        onClick={() => clearMark(log.id, log.name)}
+        onClick={() => clearMark(log.key, log.name)}
         disabled={locked}
         aria-label={t('Undo check-in for {name}', { name: log.name })}
         className="flex shrink-0 items-center gap-1 rounded-md px-1.5 py-1 text-[10.5px] font-semibold text-ink-muted transition-colors hover:bg-parchment-deep hover:text-ink disabled:cursor-not-allowed disabled:opacity-40"
@@ -936,8 +992,9 @@ export function CheckInTabs({
               <div className="truncate font-display text-[15px] font-medium leading-[1.1] text-brand-ink">
                 {log.name}
               </div>
-              <div className="mt-px font-mono text-[10px] text-ink-muted">
+              <div className="mt-px flex items-center gap-1.5 font-mono text-[10px] text-ink-muted">
                 {log.memberId}
+                {log.preMember && <PreMemberBadge />}
               </div>
             </div>
             <span className="font-mono text-[10px] tabular-nums text-ink-muted">
@@ -967,6 +1024,7 @@ export function CheckInTabs({
             <span className="min-w-0 flex-1 truncate text-[12.5px] font-medium text-ink">
               {log.name}
             </span>
+            {log.preMember && <PreMemberBadge />}
             <span className="font-mono text-[10px] text-ink-faint">
               {log.memberId}
             </span>
@@ -1088,7 +1146,7 @@ export function CheckInTabs({
                       locale === 'am' ? 'font-ethiopic' : 'font-body',
                     )}
                   >
-                    {t('Members present')}
+                    {t(membersOnly ? 'Members present' : 'Present')}
                   </div>
                   <div className="flex items-center gap-1 text-[9px] font-semibold uppercase tracking-[0.16em] text-gold-light/70">
                     <span
@@ -1099,10 +1157,10 @@ export function CheckInTabs({
                   </div>
                 </div>
                 <div className="mt-1 flex items-baseline gap-2">
-                  <span className="font-display text-[64px] font-medium leading-[0.95] tracking-[-0.02em] tabular-nums text-gold">
+                  <span className="font-display text-[64px] font-medium leading-[0.95] tracking-[-0.02em] tabular-nums lining-nums text-gold">
                     {presentCount}
                   </span>
-                  <span className="font-display text-[28px] font-normal tabular-nums text-gold-light/50">
+                  <span className="font-display text-[28px] font-normal tabular-nums lining-nums text-gold-light/50">
                     / {total}
                   </span>
                   <span className="ml-auto text-[11px] text-cream/60">
@@ -1158,8 +1216,9 @@ export function CheckInTabs({
                   <div className="truncate font-display text-lg font-medium leading-[1.1] text-brand-ink">
                     {latest.name}
                   </div>
-                  <div className="mt-0.5 text-[11px] font-semibold text-status-present">
+                  <div className="mt-0.5 flex items-center gap-1.5 text-[11px] font-semibold text-status-present">
                     {t('Checked in')} · {latest.memberId}
+                    {latest.preMember && <PreMemberBadge />}
                   </div>
                 </div>
                 <div className="shrink-0 font-mono text-[11px] font-semibold text-status-present">
@@ -1204,15 +1263,16 @@ export function CheckInTabs({
                 <div ref={mobileListRef} className="flex flex-col gap-1">
                   {mobileMembers.map((m) => (
                     <div
-                      key={m.id}
+                      key={m.key}
                       className="flex items-center gap-2.5 rounded-[10px] border border-parchment-edge bg-parchment-soft px-3 py-2"
                     >
                       <div className="min-w-0 flex-1">
                         <div className="truncate text-[13.5px] font-semibold leading-[1.15] text-brand-ink">
                           {fullName(m)}
                         </div>
-                        <div className="mt-px font-mono text-[9.5px] text-ink-muted">
-                          {m.memberId}
+                        <div className="mt-px flex items-center gap-1.5 font-mono text-[9.5px] text-ink-muted">
+                          {m.code}
+                          {m.kind === 'pre_member' && <PreMemberBadge />}
                         </div>
                       </div>
                       {statusButtons(m, 'md')}
@@ -1281,7 +1341,7 @@ export function CheckInTabs({
                   {t('Live')} · {t('present')}
                 </div>
                 <div className="mt-2 flex items-baseline gap-2">
-                  <span className="font-display text-[58px] font-medium leading-[0.9] tabular-nums text-cream">
+                  <span className="font-display text-[58px] font-medium leading-[0.9] tabular-nums lining-nums text-cream">
                     {presentCount}
                   </span>
                   <span className="font-mono text-[15px] text-gold-light/80">
@@ -1398,7 +1458,7 @@ export function CheckInTabs({
           {/* Member list */}
           <Card className="p-[22px]">
             <div className="mb-3.5 flex items-center justify-between gap-3">
-              <SectionHeader en="Member list" />
+              <SectionHeader en={membersOnly ? 'Member list' : 'Check-in list'} />
               {searchBox('w-60', deskSearchRef)}
             </div>
             {statusFilterChips('mb-3.5 flex-wrap')}
@@ -1421,12 +1481,15 @@ export function CheckInTabs({
                 </div>
                 {pageMembers.map((m) => (
                   <div
-                    key={m.id}
+                    key={m.key}
                     className="grid grid-cols-[120px_minmax(0,1fr)_auto] items-center gap-3 border-b border-parchment-edge px-1 py-3"
                   >
-                    <MemberIdText memberId={m.memberId} />
-                    <span className="truncate text-[13px] font-medium text-ink">
-                      {fullName(m)}
+                    <MemberIdText memberId={m.code} />
+                    <span className="flex min-w-0 items-center gap-2">
+                      <span className="truncate text-[13px] font-medium text-ink">
+                        {fullName(m)}
+                      </span>
+                      {m.kind === 'pre_member' && <PreMemberBadge />}
                     </span>
                     {statusButtons(m, 'sm')}
                   </div>

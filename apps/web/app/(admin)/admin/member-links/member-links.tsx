@@ -10,6 +10,7 @@ import { useLocale, useT } from '@/lib/i18n/client';
 import { intlLocale } from '@/lib/i18n/config';
 import { MEMBER_ID_PREFIX } from '@/lib/member-id';
 import { cn } from '@/lib/utils';
+import { PreMemberBadge } from '@/components/pre-members/pre-member-badge';
 import {
   approveLinkRequest,
   linkAccountDirect,
@@ -27,6 +28,8 @@ export interface PendingRow {
   memberName: string;
   phoneLast4: string | null;
   gender: string | null;
+  /** The request is for a pre-member record (FYP code). */
+  preMember: boolean;
 }
 export interface UnlinkedRow {
   userId: string;
@@ -212,6 +215,7 @@ export function MemberLinks({
                       </>
                     )}
                     {r.gender && <> · {r.gender}</>}
+                    {r.preMember && <PreMemberBadge className="ml-1.5" />}
                   </p>
                 </div>
                 <div className="flex gap-2 md:justify-end">

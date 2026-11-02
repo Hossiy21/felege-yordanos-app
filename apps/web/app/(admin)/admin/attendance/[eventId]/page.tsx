@@ -1,13 +1,14 @@
-import { asc, eq } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 import { notFound, redirect } from 'next/navigation';
 import {
   attendance,
   db,
   departments,
   events,
-  members,
 } from '@felege-yordanos/db/server';
+import { attendanceRowKey } from '@/lib/audience';
 import { checkInWindow } from '@/lib/check-in-window';
+import { loadExpectedPeople } from '@/lib/expected-people';
 import { loadEventSummary } from '@/lib/event-summary-queries';
 import {
   canReopenEvent,
@@ -63,6 +64,7 @@ export default async function CheckInPage({
           endTime: event.endTime,
           departmentId: event.departmentId,
           department: department ?? null,
+          audience: event.audience,
           closedAt: event.closedAt.toISOString(),
         }}
         summary={summary}
@@ -71,19 +73,14 @@ export default async function CheckInPage({
     );
   }
 
-  const [memberRows, attendanceRows] = await Promise.all([
+  const [people, attendanceRows] = await Promise.all([
+    loadExpectedPeople(event),
     db
       .select({
-        id: members.id,
-        memberId: members.memberId,
-        name: members.name,
-        fatherName: members.fatherName,
+        memberId: attendance.memberId,
+        preMemberId: attendance.preMemberId,
+        status: attendance.status,
       })
-      .from(members)
-      .where(eq(members.status, 'Active'))
-      .orderBy(asc(members.name)),
-    db
-      .select({ memberId: attendance.memberId, status: attendance.status })
       .from(attendance)
       .where(eq(attendance.eventId, event.id)),
   ]);
@@ -99,8 +96,12 @@ export default async function CheckInPage({
         now: Date.now(),
         limited: isLimitedToCheckInWindow(user),
       }}
-      members={memberRows}
-      attendance={attendanceRows}
+      people={people}
+      attendance={attendanceRows.map((r) => ({
+        key: attendanceRowKey(r),
+        status: r.status,
+      }))}
+      audience={event.audience}
       event={{
         title: event.title,
         eventDate: event.eventDate,

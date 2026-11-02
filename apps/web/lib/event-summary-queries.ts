@@ -4,16 +4,17 @@
  * are computed by lib/event-summary.ts.
  */
 import 'server-only';
-import { asc, eq } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 import {
   attendance,
   authUsers,
   db,
-  members,
   profiles,
   type events,
 } from '@felege-yordanos/db/server';
+import { attendanceRowKey } from './audience';
 import { computeEventSummary, type EventSummary } from './event-summary';
+import { loadExpectedPeople } from './expected-people';
 
 /** Display name of a staff account: profile name, else the login name. */
 async function staffName(userId: string | null): Promise<string | null> {
@@ -30,21 +31,13 @@ async function staffName(userId: string | null): Promise<string | null> {
 export async function loadEventSummary(
   event: typeof events.$inferSelect,
 ): Promise<EventSummary & { closedByName: string | null }> {
-  const [memberRows, rows, closedByName] = await Promise.all([
-    // Same list as the check-in screen (and the close): active members.
-    db
-      .select({
-        id: members.id,
-        memberId: members.memberId,
-        name: members.name,
-        fatherName: members.fatherName,
-      })
-      .from(members)
-      .where(eq(members.status, 'Active'))
-      .orderBy(asc(members.name)),
+  const [people, rows, closedByName] = await Promise.all([
+    // Same list as the check-in screen (and the close), by audience.
+    loadExpectedPeople(event),
     db
       .select({
         memberId: attendance.memberId,
+        preMemberId: attendance.preMemberId,
         status: attendance.status,
         checkedInAt: attendance.checkedInAt,
         method: attendance.method,
@@ -61,9 +54,9 @@ export async function loadEventSummary(
 
   const summary = computeEventSummary(
     event,
-    memberRows,
+    people,
     rows.map((r) => ({
-      memberId: r.memberId,
+      key: attendanceRowKey(r),
       status: r.status,
       checkedInAt: r.checkedInAt,
       method: r.method,

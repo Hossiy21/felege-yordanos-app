@@ -50,8 +50,10 @@ interface Message {
   title: string;
   paragraphs: string[];
   action?: { label: string; url: string };
-  /** One-time code, shown large (digits only). */
+  /** One-time code or ID, shown large. */
   code?: string;
+  /** Inline image (an attachment with this cid), e.g. a check-in QR. */
+  image?: { cid: string; alt: string };
   notes?: string[];
 }
 
@@ -65,16 +67,26 @@ function htmlSection(lang: 'am' | 'en', m: Message): string {
           <a href="${escape(m.action.url)}" target="_blank" style="display:inline-block;padding:13px 26px;font-family:${FONT};font-size:15px;font-weight:600;color:${C.cream};text-decoration:none;border-radius:10px;">${escape(tr(m.action.label))}</a>
         </td></tr></table>`
     : '';
+  // Long IDs (FYP-…, ssu/…) smaller and tighter than a 6-digit code.
+  const long = (m.code?.length ?? 0) > 8;
   const code = m.code
     ? `<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:6px 0 20px;"><tr>
-        <td bgcolor="${C.cream}" style="padding:14px 24px;border:1px solid ${C.gold};border-radius:12px;font-family:Menlo,Consolas,'Courier New',monospace;font-size:32px;font-weight:700;letter-spacing:0.3em;color:${C.brandDeep};">${escape(m.code)}</td>
+        <td bgcolor="${C.cream}" style="padding:14px 24px;border:1px solid ${C.gold};border-radius:12px;font-family:Menlo,Consolas,'Courier New',monospace;font-size:${long ? 22 : 32}px;font-weight:700;letter-spacing:${long ? '0.06em' : '0.3em'};color:${C.brandDeep};">${escape(m.code)}</td>
       </tr></table>`
     : '';
+  // The image once, in the Amharic section (both sections are one email).
+  const image =
+    m.image && lang === 'am'
+      ? `<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 20px;"><tr>
+        <td bgcolor="#FFFFFF" style="padding:12px;border:1px solid ${C.edge};border-radius:12px;"><img src="cid:${escape(m.image.cid)}" width="200" height="200" alt="${escape(m.image.alt)}" style="display:block;width:200px;height:200px;"></td>
+      </tr></table>`
+      : '';
   return `<div lang="${lang}">
     <h1 style="margin:0 0 16px;font-family:${FONT};font-size:21px;line-height:1.35;font-weight:700;color:${C.brandDeep};">${escape(tr(m.title))}</h1>
     ${m.paragraphs.map((s) => p(s)).join('')}
     ${button}
     ${code}
+    ${image}
     ${(m.notes ?? []).map((s) => p(s, C.inkMuted, 13)).join('')}
   </div>`;
 }
@@ -168,7 +180,11 @@ export function passwordResetEmail({ url }: { url: string }): EmailContent {
  * The code is valid 10 minutes (CODE_EXPIRES_IN in lib/email-verification.ts).
  * The code leads the subject, so it shows in the inbox preview.
  */
-export function verificationCodeEmail({ code }: { code: string }): EmailContent {
+export function verificationCodeEmail({
+  code,
+}: {
+  code: string;
+}): EmailContent {
   const content = render({
     subject: 'Verification code',
     title: 'Verify your email',
@@ -176,12 +192,52 @@ export function verificationCodeEmail({ code }: { code: string }): EmailContent 
       'Enter this code in the app to verify your email address. The code is valid for 10 minutes.',
     ],
     code,
-    notes: [
-      'If you did not create an account, you can ignore this email.',
-    ],
+    notes: ['If you did not create an account, you can ignore this email.'],
   });
   return {
     ...content,
     subject: `${code} · ${am('Verification code')} / Verification code`,
   };
+}
+
+/**
+ * A pre-member was approved: their ID and check-in QR (inline image, cid
+ * "qr"; the caller attaches the PNG). Sent to the email on the record.
+ */
+export function preMemberApprovedEmail({
+  code,
+}: {
+  code: string;
+}): EmailContent {
+  return render({
+    subject: 'Your pre-member ID',
+    title: 'Welcome to Felege Yordanos Sunday School',
+    paragraphs: [
+      'Your registration as a pre-member (ቅድመ አባል) has been approved. This is your ID:',
+    ],
+    code,
+    image: { cid: 'qr', alt: code },
+    notes: [
+      'Show this QR code at the door to check in. You can also sign up in the app and link your account with this ID.',
+    ],
+  });
+}
+
+/** A pre-member was promoted: they are a member now, with their SSU ID. */
+export function promotedToMemberEmail({
+  memberId,
+}: {
+  memberId: string;
+}): EmailContent {
+  return render({
+    subject: "You're now a member",
+    title: "You're now a member",
+    paragraphs: [
+      'You are now a registered member of the Sunday School. This is your member ID:',
+    ],
+    code: memberId,
+    notes: [
+      'From now on please use your member QR code to check in. Your pre-member QR no longer works.',
+    ],
+  });
 }

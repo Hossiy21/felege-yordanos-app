@@ -106,6 +106,13 @@ module.exports = {
           late: 'rgb(var(--fy-late) / <alpha-value>)',
           'late-bg': 'rgb(var(--fy-late-bg) / <alpha-value>)',
         },
+        /* Pre-member (ቅድመ አባል) accent: badge, QR card band */
+        pre: {
+          DEFAULT: 'rgb(var(--fy-pre) / <alpha-value>)',
+          mid: 'rgb(var(--fy-pre-mid) / <alpha-value>)',
+          deep: 'rgb(var(--fy-pre-deep) / <alpha-value>)',
+          bg: 'rgb(var(--fy-pre-bg) / <alpha-value>)',
+        },
       },
       borderRadius: {
         /* Reserved, consistent scale — driven by the --radius-* tokens in

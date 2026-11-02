@@ -7,6 +7,7 @@
  * the P/L a volunteer tapped. Rows marked before times were recorded count as
  * attended but are left out of every time-based number.
  */
+import type { PersonKind } from './audience';
 import { checkInWindow, eventStartAt } from './check-in-window';
 
 export type TappedStatus = 'present' | 'late' | 'absent';
@@ -29,15 +30,20 @@ export interface SummaryEventInput {
   checkInClosesAfterMin: number;
 }
 
+/** One person on the event's list (lib/expected-people.ts). */
 export interface SummaryMemberInput {
-  id: number;
-  memberId: string;
+  /** "m:<members.id>" or "p:<pre_members.id>" (lib/audience.ts). */
+  key: string;
+  kind: PersonKind;
+  /** ID shown: SSU member ID or FYP code. */
+  code: string;
   name: string;
   fatherName: string;
 }
 
 export interface SummaryRowInput {
-  memberId: number;
+  /** Person key of the attendance row. */
+  key: string;
   status: TappedStatus;
   checkedInAt: Date | null;
   method: SummaryMethod | null;
@@ -46,7 +52,9 @@ export interface SummaryRowInput {
 }
 
 export interface SummaryRecord {
-  id: number;
+  key: string;
+  kind: PersonKind;
+  /** ID shown: SSU member ID or FYP code. */
   memberId: string;
   name: string;
   status: SummaryStatus;
@@ -76,6 +84,17 @@ export interface SummaryPoint {
   name: string;
 }
 
+/** Totals per kind of person (shown when an event has both). */
+export interface SummaryGroup {
+  kind: PersonKind;
+  total: number;
+  attended: number;
+  onTime: number;
+  late: number;
+  absent: number;
+  attendedPct: number;
+}
+
 export interface EventSummary {
   total: number;
   attended: number;
@@ -101,6 +120,8 @@ export interface EventSummary {
   buckets: SummaryBucket[];
   methods: { qr: number; quick_id: number; list: number; unknown: number };
   checkedInBy: { name: string; count: number }[];
+  /** Members and pre-members apart (only the kinds on the list). */
+  groups: SummaryGroup[];
   records: SummaryRecord[];
 }
 
@@ -175,13 +196,14 @@ export function computeEventSummary(
 ): EventSummary {
   const start = eventStartAt(event);
   const { opensAt } = checkInWindow(event);
-  const rowByMember = new Map(rows.map((r) => [r.memberId, r]));
+  const rowByMember = new Map(rows.map((r) => [r.key, r]));
 
   const records: SummaryRecord[] = members.map((m) => {
-    const row = rowByMember.get(m.id);
+    const row = rowByMember.get(m.key);
     const base = {
-      id: m.id,
-      memberId: m.memberId,
+      key: m.key,
+      kind: m.kind,
+      memberId: m.code,
       name: fullName(m),
       tapped: row?.status ?? null,
       method: row?.method ?? null,
@@ -253,10 +275,10 @@ export function computeEventSummary(
 
   const methods = { qr: 0, quick_id: 0, list: 0, unknown: 0 };
   const byVolunteer = new Map<string, { name: string; count: number }>();
-  const listed = new Set(members.map((m) => m.id));
+  const listed = new Set(members.map((m) => m.key));
   for (const r of rows) {
-    // Attended members on the list only (same people as the cards).
-    if (r.status === 'absent' || !listed.has(r.memberId)) continue;
+    // Attended people on the list only (same people as the cards).
+    if (r.status === 'absent' || !listed.has(r.key)) continue;
     if (r.method === 'qr' || r.method === 'quick_id' || r.method === 'list')
       methods[r.method] += 1;
     else methods.unknown += 1;
@@ -268,6 +290,25 @@ export function computeEventSummary(
     entry.count += 1;
     byVolunteer.set(key, entry);
   }
+
+  const groups: SummaryGroup[] = (['member', 'pre_member'] as const)
+    .map((kind) => {
+      const list = records.filter((r) => r.kind === kind);
+      const onTimeN = list.filter((r) => r.status === 'on_time').length;
+      const lateN = list.filter((r) => r.status === 'late').length;
+      const absentN = list.filter((r) => r.status === 'absent').length;
+      const attendedN = list.length - absentN;
+      return {
+        kind,
+        total: list.length,
+        attended: attendedN,
+        onTime: onTimeN,
+        late: lateN,
+        absent: absentN,
+        attendedPct: pct(attendedN, list.length),
+      };
+    })
+    .filter((g) => g.total > 0);
 
   const point = (r: SummaryRecord | undefined): SummaryPoint | null =>
     r?.checkedInAt ? { at: r.checkedInAt, name: r.name } : null;
@@ -307,6 +348,7 @@ export function computeEventSummary(
     checkedInBy: [...byVolunteer.values()].sort(
       (a, b) => b.count - a.count || a.name.localeCompare(b.name),
     ),
+    groups,
     records,
   };
 }

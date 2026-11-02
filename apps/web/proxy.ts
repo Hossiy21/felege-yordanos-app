@@ -1,6 +1,10 @@
 import { getSessionCookie } from 'better-auth/cookies';
 import { NextResponse, type NextRequest } from 'next/server';
-import { isLocale, LOCALE_COOKIE, LOCALE_COOKIE_MAX_AGE } from '@/lib/i18n/config';
+import {
+  isLocale,
+  LOCALE_COOKIE,
+  LOCALE_COOKIE_MAX_AGE,
+} from '@/lib/i18n/config';
 
 /**
  * Fast, optimistic route guard. It only checks that a session cookie exists
@@ -17,6 +21,7 @@ const PUBLIC_PATHS = [
   '/reset-password',
   '/privacy',
   '/terms',
+  '/join', // pre-member self-registration (session QR)
   '/up', // health check (Kamal, uptime monitoring)
 ];
 
@@ -40,7 +45,9 @@ export function proxy(request: NextRequest) {
   const lang = request.nextUrl.searchParams.get('lang');
   if (isLocale(lang)) {
     request.cookies.set(LOCALE_COOKIE, lang);
-    const response = NextResponse.next({ request: { headers: request.headers } });
+    const response = NextResponse.next({
+      request: { headers: request.headers },
+    });
     response.cookies.set(LOCALE_COOKIE, lang, {
       path: '/',
       maxAge: LOCALE_COOKIE_MAX_AGE,

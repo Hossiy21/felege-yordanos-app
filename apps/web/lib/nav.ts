@@ -8,6 +8,7 @@ import {
   Music,
   Receipt,
   ScanLine,
+  Sprout,
   User,
   UserCheck,
   Users,
@@ -18,6 +19,7 @@ import {
   canAccessAdmin,
   canApproveMemberLinks,
   canManageNotices,
+  canManagePreMembers,
   canManageSongs,
   canManageUsers,
   canReviewDonations,
@@ -120,6 +122,13 @@ export const ADMIN_NAV: NavItem[] = [
     matchNested: true,
   },
   {
+    href: '/admin/pre-members',
+    labelEn: 'Pre-members',
+    labelAm: 'ቅድመ አባላት',
+    icon: Sprout,
+    matchNested: true,
+  },
+  {
     href: '/admin/users',
     labelEn: 'Users',
     labelAm: 'ተጠቃሚዎች',
@@ -153,6 +162,7 @@ const ADMIN_NAV_RULES: Record<string, (u: NavUser) => boolean> = {
   '/admin/songs': canManageSongs,
   '/admin/donations': canReviewDonations,
   '/admin/member-links': canApproveMemberLinks,
+  '/admin/pre-members': canManagePreMembers,
   '/admin/users': canManageUsers,
 };
 
@@ -168,10 +178,18 @@ export interface RoleNav {
   admin: NavItem[];
 }
 
-/** The nav sections to show, given the admin hrefs this user may see. */
-export function navFor(adminHrefs: readonly string[]): RoleNav {
+/**
+ * The nav sections to show, given the admin hrefs this user may see.
+ * Pre-members do not see Donate (donations are for members).
+ */
+export function navFor(
+  adminHrefs: readonly string[],
+  preMember = false,
+): RoleNav {
   return {
-    member: MEMBER_NAV,
+    member: preMember
+      ? MEMBER_NAV.filter((i) => i.href !== '/donate')
+      : MEMBER_NAV,
     admin: ADMIN_NAV.filter((i) => adminHrefs.includes(i.href)),
   };
 }

@@ -42,6 +42,8 @@ import {
   updateSeriesEnd,
 } from './actions';
 import { primaryBtn } from '@/components/events/event-ui';
+import { AudienceField } from '@/components/forms/audience-field';
+import type { Audience } from '@/lib/audience';
 import { CHECK_IN_DEFAULT_MIN, CHECK_IN_MAX_MIN } from '@/lib/check-in-window';
 
 type EventRow = typeof events.$inferSelect;
@@ -129,6 +131,7 @@ export function EventFormDialog({
   const [opensBefore, setOpensBefore] = useState(String(CHECK_IN_DEFAULT_MIN));
   const [closesAfter, setClosesAfter] = useState(String(CHECK_IN_DEFAULT_MIN));
   const [deptId, setDeptId] = useState('');
+  const [audience, setAudience] = useState<Audience>('members');
   const [repeat, setRepeat] = useState<RepeatChoice>('none');
   const [until, setUntil] = useState('');
   const [seriesUntil, setSeriesUntil] = useState('');
@@ -148,6 +151,7 @@ export function EventFormDialog({
       setOpensBefore(String(event.checkInOpensBeforeMin));
       setClosesAfter(String(event.checkInClosesAfterMin));
       setDeptId(event.departmentId ? String(event.departmentId) : '');
+      setAudience(event.audience);
       setRepeat('none');
       setUntil('');
       setSeriesUntil(event.recurrenceUntil ?? '');
@@ -160,6 +164,7 @@ export function EventFormDialog({
       setOpensBefore(String(CHECK_IN_DEFAULT_MIN));
       setClosesAfter(String(CHECK_IN_DEFAULT_MIN));
       setDeptId(userDeptId ? String(userDeptId) : '');
+      setAudience('members');
       setRepeat('none');
       setUntil('');
       setSeriesUntil('');
@@ -216,6 +221,7 @@ export function EventFormDialog({
       startTime: startTime || null,
       endTime: endTime || null,
       departmentId: deptId ? Number(deptId) : null,
+      audience,
       ...checkInMinutes(),
       recurrence: recurring ? (repeat as Recurrence) : null,
       until: recurring ? cappedUntil || null : null,
@@ -251,6 +257,7 @@ export function EventFormDialog({
       startTime: startTime || null,
       endTime: endTime || null,
       departmentId: deptId ? Number(deptId) : null,
+      audience,
       ...checkInMinutes(),
     });
     setBusy(false);
@@ -547,6 +554,15 @@ export function EventFormDialog({
                   </SelectContent>
                 </Select>
               )}
+            </div>
+
+            {/* Who is expected at check-in and on close */}
+            <div className="mt-3.5">
+              <AudienceField
+                value={audience}
+                onChange={setAudience}
+                labelClassName={labelCls}
+              />
             </div>
 
             {/* Description */}

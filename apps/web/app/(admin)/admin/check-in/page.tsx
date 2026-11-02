@@ -1,12 +1,13 @@
-import { asc, desc, eq } from 'drizzle-orm';
+import { desc, eq } from 'drizzle-orm';
 import Link from 'next/link';
 import { DoorOpen, Lock } from 'lucide-react';
 import {
   attendance as attendanceTable,
   db,
   events as eventsTable,
-  members as membersTable,
 } from '@felege-yordanos/db/server';
+import { attendanceRowKey } from '@/lib/audience';
+import { loadExpectedPeople } from '@/lib/expected-people';
 import { PageHead } from '@/components/ds';
 import { checkInWindow } from '@/lib/check-in-window';
 import { todayYmd } from '@/lib/events';
@@ -23,7 +24,8 @@ import {
   CheckInTabs,
   type CheckInAttendance,
 } from '../attendance/[eventId]/check-in-tabs';
-import { BackLink, secondaryBtn } from '@/components/events/event-ui';
+import { BackLink } from '@/components/events/event-ui';
+import { secondaryBtn } from '@/components/events/button-classes';
 import { CheckInEventPicker, type PickerEvent } from './check-in-event-picker';
 
 type Event = typeof eventsTable.$inferSelect;
@@ -39,19 +41,10 @@ export default async function CheckInHubPage({
 
   const today = todayYmd();
 
-  const [allEvents, members] = await Promise.all([
-    db.select().from(eventsTable).orderBy(desc(eventsTable.eventDate)),
-    db
-      .select({
-        id: membersTable.id,
-        memberId: membersTable.memberId,
-        name: membersTable.name,
-        fatherName: membersTable.fatherName,
-      })
-      .from(membersTable)
-      .where(eq(membersTable.status, 'Active'))
-      .orderBy(asc(membersTable.name)),
-  ]);
+  const allEvents = await db
+    .select()
+    .from(eventsTable)
+    .orderBy(desc(eventsTable.eventDate));
 
   // Only events this user can check people in at.
   const events = allEvents.filter((e) => canMarkAttendance(user, e));
@@ -72,13 +65,18 @@ export default async function CheckInHubPage({
     !!selectedEvent && canViewEventAttendance(user, selectedEvent);
   let attendance: CheckInAttendance[] = [];
   if (selectedEvent && canView) {
-    attendance = await db
+    const rows = await db
       .select({
         memberId: attendanceTable.memberId,
+        preMemberId: attendanceTable.preMemberId,
         status: attendanceTable.status,
       })
       .from(attendanceTable)
       .where(eq(attendanceTable.eventId, selectedEvent.id));
+    attendance = rows.map((r) => ({
+      key: attendanceRowKey(r),
+      status: r.status,
+    }));
   }
 
   const toPicker = (e: Event): PickerEvent => ({
@@ -132,6 +130,8 @@ export default async function CheckInHubPage({
 
   if (selectedEvent) {
     const times = checkInWindow(selectedEvent);
+    // Who is expected depends on the event's audience.
+    const people = await loadExpectedPeople(selectedEvent);
     return (
       <CheckInTabs
         key={selectedEvent.id}
@@ -142,8 +142,9 @@ export default async function CheckInHubPage({
           now: Date.now(),
           limited: isLimitedToCheckInWindow(user),
         }}
-        members={members}
+        people={people}
         attendance={attendance}
+        audience={selectedEvent.audience}
         event={{
           title: selectedEvent.title,
           eventDate: selectedEvent.eventDate,

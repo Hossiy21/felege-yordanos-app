@@ -6,12 +6,14 @@ import {
   canSeeExpiredNotices,
   canViewNotices,
   isAdmin,
+  visibleAudiences,
 } from '@/lib/permissions';
-import { requireLinkedMember } from '@/lib/session';
+import { requireMemberOrPreMember } from '@/lib/session';
 import { NoticeBoard } from './notice-board';
 
 export default async function NoticesPage() {
-  const user = await requireLinkedMember();
+  // Members and pre-members, each for their own audience.
+  const user = await requireMemberOrPreMember();
   if (!canViewNotices(user)) redirect('/dashboard');
   const canManage = canManageNotices(user);
 
@@ -19,6 +21,7 @@ export default async function NoticesPage() {
     listNotices({
       userId: user.id,
       includeExpired: canSeeExpiredNotices(user),
+      audiences: visibleAudiences(user),
     }),
     canManage ? postableDepartments(user) : Promise.resolve([]),
   ]);
