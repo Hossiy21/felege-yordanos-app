@@ -57,6 +57,13 @@
       "when": 1791620011290,
       "tag": "0007_event_close_check_in_time",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1793194171982,
+      "tag": "0008_soft_the_santerians",
+      "breakpoints": true
     }
   ]
 }

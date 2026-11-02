@@ -11,6 +11,7 @@ import { categoryDotMap, hasEthiopic, songNumber } from '@/lib/category-color';
 import { LyricsCard } from '../lyrics';
 import { AudioPlayer } from '@/components/audio-player';
 import { songAudioSrc } from '@/lib/media';
+import { RecordSongView } from '../record-song-view';
 
 export default async function SongDetailPage({
   params,
@@ -39,6 +40,7 @@ export default async function SongDetailPage({
 
   return (
     <div className="mx-auto max-w-2xl px-[22px] pb-6 pt-3.5 md:px-7 md:py-7">
+      <RecordSongView songId={song.id} />
       <Link
         href="/songbook"
         className="mb-3.5 inline-flex items-center gap-1.5 text-xs font-medium text-gold-deep transition-colors hover:text-brand dark:hover:text-gold-light"

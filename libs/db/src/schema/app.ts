@@ -252,6 +252,32 @@ export const songs = pgTable('songs', {
   updatedAt: updatedAt(),
 });
 
+/** The latest time each signed-in user opened each song. */
+export const songViews = pgTable(
+  'song_views',
+  {
+    userId: uuid('user_id').notNull(),
+    songId: uuid('song_id').notNull(),
+    viewedAt: timestamp('viewed_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [
+    primaryKey({ name: 'song_views_pkey', columns: [t.userId, t.songId] }),
+    index('idx_song_views_user_viewed_at').on(t.userId, t.viewedAt.desc()),
+    foreignKey({
+      name: 'song_views_user_id_fkey',
+      columns: [t.userId],
+      foreignColumns: [authUsers.id],
+    }).onDelete('cascade'),
+    foreignKey({
+      name: 'song_views_song_id_fkey',
+      columns: [t.songId],
+      foreignColumns: [songs.id],
+    }).onDelete('cascade'),
+  ],
+);
+
 /* ─── Events & attendance ────────────────────────────────── */
 
 export const RECURRENCES = ['weekly', 'biweekly', 'monthly'] as const;

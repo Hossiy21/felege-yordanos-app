@@ -5,6 +5,7 @@ export const songbook: Record<string, string> = {
   'Search songs': 'መዝሙሮችን ፈልግ',
   'No songs found': 'ምንም መዝሙር አልተገኘም',
   'No songs yet': 'እስካሁን መዝሙር የለም',
+  'Open a song to see it here.': 'መዝሙር ይክፈቱና እዚህ ያግኙት።',
   'No lyrics available.': 'ግጥም አልተገኘም።',
   'Select a song to view lyrics.': 'ግጥሙን ለማየት መዝሙር ይምረጡ።',
   Print: 'አትም',

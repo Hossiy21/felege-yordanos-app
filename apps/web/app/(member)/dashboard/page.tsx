@@ -6,6 +6,7 @@ import {
   events,
   memberLinkRequests,
   members,
+  songViews,
   songs as songsTable,
 } from '@felege-yordanos/db/server';
 import { Card } from '@/components/ds';
@@ -126,7 +127,7 @@ export default async function MemberDashboard() {
       .where(ownDonation)
       .orderBy(desc(donations.createdAt))
       .limit(1),
-    // Songbook preview: play history isn't tracked, so show the first songs by number.
+    // Per-user history only: the user id comes from requireUser(), never the client.
     db
       .select({
         id: songsTable.id,
@@ -136,8 +137,10 @@ export default async function MemberDashboard() {
         audioUrl: songsTable.audioUrl,
         audioKey: songsTable.audioKey,
       })
-      .from(songsTable)
-      .orderBy(asc(songsTable.number))
+      .from(songViews)
+      .innerJoin(songsTable, eq(songViews.songId, songsTable.id))
+      .where(eq(songViews.userId, user.id))
+      .orderBy(desc(songViews.viewedAt))
       .limit(3),
     db.$count(songsTable),
     // Latest active notices (members never see expired ones here).
@@ -193,6 +196,9 @@ export default async function MemberDashboard() {
           )
         )}
         <QuickActions songCount={songCount} />
+        <div className="mt-4">
+          <SongbookPreviewCard songs={previewSongs} />
+        </div>
         {canViewNotices(user) && (
           <NoticesCard notices={latestNotices} className="mt-4" />
         )}
