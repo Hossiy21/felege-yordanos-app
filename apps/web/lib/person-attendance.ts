@@ -14,7 +14,9 @@
  *   pre-member record (pre_members.promoted_member_id). Those pre-member rows
  *   are the "before membership" section. When one event has a row on both,
  *   the event counts once (the better row wins: attended, then a marked
- *   absent, then the automatic absent).
+ *   absent, then the automatic absent; on a tie the pre-member row, since
+ *   both records were expected only when the event closed before the
+ *   promotion).
  *
  * Lateness is the event summary's rule (lib/event-summary.ts): the recorded
  * check-in time against the start, not the P/L tap. Rows without a time count
@@ -119,7 +121,7 @@ function betterRow(a: PersonRowInput, b: PersonRowInput): PersonRowInput {
   if (a.checkedInAt && b.checkedInAt)
     return a.checkedInAt <= b.checkedInAt ? a : b;
   if (a.checkedInAt || b.checkedInAt) return a.checkedInAt ? a : b;
-  return a.on === 'member' ? a : b;
+  return a.on === 'pre_member' ? a : b;
 }
 
 /**
