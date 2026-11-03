@@ -1,14 +1,8 @@
 import { eq } from 'drizzle-orm';
 import { notFound, redirect } from 'next/navigation';
-import {
-  attendance,
-  db,
-  departments,
-  events,
-} from '@felege-yordanos/db/server';
-import { attendanceRowKey } from '@/lib/audience';
+import { db, departments, events } from '@felege-yordanos/db/server';
 import { checkInWindow } from '@/lib/check-in-window';
-import { loadExpectedPeople } from '@/lib/expected-people';
+import { loadAttendanceRows, loadExpectedPeople } from '@/lib/expected-people';
 import { loadEventSummary } from '@/lib/event-summary-queries';
 import {
   canReopenEvent,
@@ -73,16 +67,10 @@ export default async function CheckInPage({
     );
   }
 
+  // The screen lists these plus anyone with a row (lib/event-people.ts).
   const [people, attendanceRows] = await Promise.all([
     loadExpectedPeople(event),
-    db
-      .select({
-        memberId: attendance.memberId,
-        preMemberId: attendance.preMemberId,
-        status: attendance.status,
-      })
-      .from(attendance)
-      .where(eq(attendance.eventId, event.id)),
+    loadAttendanceRows(event.id),
   ]);
 
   const times = checkInWindow(event);
@@ -98,8 +86,9 @@ export default async function CheckInPage({
       }}
       people={people}
       attendance={attendanceRows.map((r) => ({
-        key: attendanceRowKey(r),
+        key: r.key,
         status: r.status,
+        person: r.person,
       }))}
       audience={event.audience}
       event={{

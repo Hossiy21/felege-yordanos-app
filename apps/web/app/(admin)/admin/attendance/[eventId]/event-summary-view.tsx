@@ -20,6 +20,7 @@ import { AudienceTag } from '@/components/forms/audience-tag';
 import { useLocale, useT } from '@/lib/i18n/client';
 import { cn } from '@/lib/utils';
 import { PreMemberBadge } from '@/components/pre-members/pre-member-badge';
+import { OffListTag } from '@/components/events/off-list-tag';
 import { MemberIdText } from './check-in-tabs';
 
 interface SummaryEvent {
@@ -569,6 +570,7 @@ export function EventSummaryView({
                 <span className="flex min-w-0 items-center gap-2">
                   <span className="truncate text-[13px] font-medium text-ink">{r.name}</span>
                   {r.kind === 'pre_member' && <PreMemberBadge />}
+                  {r.offList && <OffListTag reason={r.offList} />}
                 </span>
                 <span className="font-mono text-[11.5px] tabular-nums text-ink">
                   {timeOf(r.checkedInAt)}
@@ -595,6 +597,7 @@ export function EventSummaryView({
                     <div className="flex items-center gap-1.5">
                       <MemberIdText memberId={r.memberId} />
                       {r.kind === 'pre_member' && <PreMemberBadge />}
+                      {r.offList && <OffListTag reason={r.offList} />}
                     </div>
                   </div>
                   <div className="shrink-0">{statusPill(r)}</div>
