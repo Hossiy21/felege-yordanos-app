@@ -136,6 +136,19 @@ export function minutesVsStart(at: Date, start: Date): number {
   return Math.round(diff / MINUTE_MS) || 0;
 }
 
+/**
+ * Status of an attended row from its time: late after the start (no grace
+ * period), on time at or before it, no_time for rows marked before times
+ * were recorded. The one lateness rule (summary and person pages).
+ */
+export function attendedStatus(
+  checkedInAt: Date | null,
+  start: Date,
+): 'on_time' | 'late' | 'no_time' {
+  if (!checkedInAt) return 'no_time';
+  return checkedInAt.getTime() > start.getTime() ? 'late' : 'on_time';
+}
+
 const fullName = (m: SummaryMemberInput) =>
   [m.name, m.fatherName].filter(Boolean).join(' ');
 
@@ -237,7 +250,7 @@ export function computeEventSummary(
         minutesVsStart: null,
       };
     }
-    const late = row.checkedInAt.getTime() > start.getTime();
+    const late = attendedStatus(row.checkedInAt, start) === 'late';
     return {
       ...base,
       status: late ? 'late' : 'on_time',

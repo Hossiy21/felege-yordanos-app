@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from 'react';
 import { Clock, QrCode, X } from 'lucide-react';
-import { Card, PageHead, SectionHeader, StatusPill } from '@/components/ds';
+import { PageHead, SectionHeader } from '@/components/ds';
 import {
   Dialog,
   DialogClose,
@@ -12,7 +12,7 @@ import {
 } from '@/components/ui/dialog';
 import { MemberQR } from '@/components/member-qr';
 import { useLocale, useT } from '@/lib/i18n/client';
-import { formatYmd, parseYmd } from '@/lib/events';
+import { formatYmd } from '@/lib/events';
 import { cn } from '@/lib/utils';
 import { PreMemberBadge } from '@/components/pre-members/pre-member-badge';
 import {
@@ -21,12 +21,16 @@ import {
   type CalLegendItem,
 } from '@/components/events/events-calendar';
 import {
-  DeptChip,
   ViewToggle,
   type ListCalView,
 } from '@/components/events/event-ui';
 
-export type AttnStatus = 'present' | 'late' | 'absent' | 'upcoming';
+export type AttnStatus =
+  | 'present'
+  | 'late'
+  | 'absent'
+  | 'upcoming'
+  | 'not_marked';
 
 export interface AttnRow {
   /** Event id. */
@@ -50,8 +54,13 @@ export interface NextEvent {
 }
 
 interface AttendanceViewProps {
-  /** Most recent first; an upcoming next event may lead the list. */
+  /** Calendar entries; an upcoming next event may lead the list. */
   rows: AttnRow[];
+  /** Totals and timeline (PersonAttendanceSection), the list view. */
+  history: React.ReactNode;
+  /** All-time count for the header: attended of the closed events. */
+  attended: number;
+  expected: number;
   nextEvent: NextEvent | null;
   /** SSU member ID, or the FYP code when `preMember`. */
   memberId: string | null;
@@ -63,12 +72,22 @@ const STATUS_COLOR: Record<AttnStatus, string> = {
   late: 'rgb(var(--fy-late))',
   absent: 'rgb(var(--fy-absent))',
   upcoming: 'rgb(var(--fy-gold))',
+  not_marked: 'rgb(var(--fy-ink-faint))',
 };
 
-const COLS = 'grid-cols-[minmax(0,1.5fr)_120px_90px_80px_110px]';
+const STATUS_TEXT: Record<AttnStatus, string> = {
+  present: 'Present',
+  late: 'Late',
+  absent: 'Absent',
+  upcoming: 'Upcoming',
+  not_marked: 'Not marked',
+};
 
 export function AttendanceView({
   rows,
+  history,
+  attended,
+  expected,
   nextEvent,
   memberId,
   preMember = false,
@@ -77,11 +96,6 @@ export function AttendanceView({
   const locale = useLocale();
   const [view, setView] = useState<ListCalView>('list');
   const [qrOpen, setQrOpen] = useState(false);
-
-  const attended = rows.filter(
-    (r) => r.status === 'present' || r.status === 'late',
-  ).length;
-  const pastTotal = rows.filter((r) => r.status !== 'upcoming').length;
 
   const calEvents: CalEvent[] = useMemo(
     () =>
@@ -93,8 +107,8 @@ export function AttendanceView({
         title: r.title,
         color: STATUS_COLOR[r.status],
         sub: r.dept,
-        status: t(r.status),
-        hollow: r.status === 'upcoming',
+        status: t(STATUS_TEXT[r.status]),
+        hollow: r.status === 'upcoming' || r.status === 'not_marked',
         strike: r.status === 'absent',
       })),
     [rows, t],
@@ -104,14 +118,13 @@ export function AttendanceView({
     { label: t('Late'), color: STATUS_COLOR.late },
     { label: t('Absent'), color: STATUS_COLOR.absent },
     { label: t('Upcoming'), color: STATUS_COLOR.upcoming, hollow: true },
+    {
+      label: t('Not marked'),
+      color: STATUS_COLOR.not_marked,
+      hollow: true,
+    },
   ];
   const calendar = <EventsCalendar events={calEvents} legend={legend} />;
-
-  const empty = (
-    <p className="py-10 text-center text-sm text-ink-muted">
-      {t('No attendance records yet.')}
-    </p>
-  );
 
   const qrButton = (variant: 'banner' | 'chip') =>
     memberId && (
@@ -137,7 +150,7 @@ export function AttendanceView({
   return (
     <>
       {/* ───────────── PHONE ───────────── */}
-      <div className="px-[18px] pb-6 pt-4 md:hidden">
+      <div className="px-[18px] pt-4 md:hidden">
         <PageHead
           en="My events"
           am="መርሃ ግብር"
@@ -145,7 +158,7 @@ export function AttendanceView({
           actions={
             <div className="text-right">
               <div className="font-mono text-[15px] text-brand dark:text-gold-light">
-                {attended}/{pastTotal}
+                {attended}/{expected}
               </div>
               <div className="text-[8.5px] uppercase tracking-[0.14em] text-ink-muted">
                 {t('attended')}
@@ -185,57 +198,10 @@ export function AttendanceView({
         <div className="my-3.5">
           <ViewToggle view={view} onChange={setView} variant="mobile" />
         </div>
-
-        {view === 'calendar' ? (
-          calendar
-        ) : rows.length === 0 ? (
-          empty
-        ) : (
-          <div className="flex flex-col gap-1.5">
-            {rows.map((r) => (
-              <div
-                key={r.id}
-                className="flex items-center gap-3 rounded-xl border border-parchment-edge bg-parchment-soft px-3.5 py-[11px]"
-              >
-                <div className="flex w-[42px] shrink-0 flex-col text-center">
-                  <span className="font-display text-[19px] font-semibold leading-none text-brand dark:text-gold">
-                    {String(parseYmd(r.date).getDate()).padStart(2, '0')}
-                  </span>
-                  <span className="text-[8.5px] uppercase tracking-[0.12em] text-ink-muted">
-                    {formatYmd(r.date, locale, { month: 'short' })}
-                  </span>
-                </div>
-                <div className="min-w-0 flex-1">
-                  <div className="truncate font-display text-base font-medium leading-[1.15] text-brand-ink">
-                    {r.title}
-                  </div>
-                  <div className="mt-0.5 flex items-center gap-1.5">
-                    <span
-                      className={cn(
-                        'truncate text-[10.5px] text-gold-deep',
-                        locale === 'am' ? 'font-ethiopic' : 'font-body',
-                      )}
-                    >
-                      {r.dept}
-                    </span>
-                    {r.time && (
-                      <span className="shrink-0 font-mono text-[9.5px] text-ink-faint">
-                        · {r.time}
-                      </span>
-                    )}
-                  </div>
-                </div>
-                <StatusPill tone={r.status} className="shrink-0 text-[10px]">
-                  {t(r.status)}
-                </StatusPill>
-              </div>
-            ))}
-          </div>
-        )}
       </div>
 
       {/* ───────────── DESKTOP ───────────── */}
-      <div className="hidden px-7 py-7 md:block">
+      <div className="hidden px-7 pt-7 md:block">
         <PageHead
           en="My events"
           am="መርሃ ግብር"
@@ -278,75 +244,19 @@ export function AttendanceView({
             {qrButton('banner')}
           </div>
         </div>
+      </div>
 
+      {/* List (totals and timeline) or calendar, phone and desktop */}
+      <div className="px-[18px] pb-6 md:px-7 md:pb-7">
         {view === 'calendar' ? (
           calendar
         ) : (
-          <Card className="p-[22px]">
-            <div className="mb-3.5 flex items-center justify-between">
-              <SectionHeader en="Events" am="የክትትል ታሪክ" />
-              <span className="whitespace-nowrap font-mono text-xs text-gold-deep">
-                {attended} / {pastTotal}{' '}
-                <span className="font-body text-[9.5px] text-ink-muted">
-                  {t('attended')}
-                </span>
-              </span>
+          <>
+            <div className="mb-3 hidden md:block">
+              <SectionHeader en="Attendance history" am="የመገኘት ታሪክ" />
             </div>
-
-            {rows.length === 0 ? (
-              empty
-            ) : (
-              <>
-                <div
-                  className={cn(
-                    'grid gap-3 border-b border-parchment-edge-strong px-1 pb-[9px]',
-                    COLS,
-                  )}
-                >
-                  {[
-                    t('Event'),
-                    t('Department'),
-                    t('Date'),
-                    t('Time'),
-                    t('Status'),
-                  ].map((h) => (
-                    <span
-                      key={h}
-                      className="text-[9.5px] font-semibold uppercase tracking-[0.16em] text-gold-deep"
-                    >
-                      {h}
-                    </span>
-                  ))}
-                </div>
-                {rows.map((r) => (
-                  <div
-                    key={r.id}
-                    className={cn(
-                      'grid items-center gap-3 border-b border-parchment-edge px-1 py-3',
-                      COLS,
-                    )}
-                  >
-                    <div className="min-w-0 pl-3">
-                      <span className="block truncate font-display text-base font-medium text-brand-ink">
-                        {r.title}
-                      </span>
-                    </div>
-                    <DeptChip label={r.dept} />
-                    <span className="font-mono text-[11px] text-ink">
-                      {formatYmd(r.date, locale, {
-                        month: 'short',
-                        day: '2-digit',
-                      })}
-                    </span>
-                    <span className="font-mono text-[11px] text-ink-muted">
-                      {r.time || '—'}
-                    </span>
-                    <StatusPill tone={r.status}>{t(r.status)}</StatusPill>
-                  </div>
-                ))}
-              </>
-            )}
-          </Card>
+            {history}
+          </>
         )}
       </div>
 
