@@ -68,7 +68,9 @@ interface RawPeopleRow {
  * members and pre-members (active and withdrawn; promoted records are part of
  * their member) with their counts over closed events in the date range.
  * Rows of a promoted pre-member count for the member; an event with rows on
- * both counts once (attended beats a marked absent beats the close's).
+ * both counts once (attended beats a marked absent beats the close's; on a
+ * tie the pre-member row, as in lib/person-attendance.ts). The search also
+ * finds a member by the FYP code they had as a pre-member.
  */
 export async function loadPeople(
   f: PeopleFilters,
@@ -99,7 +101,7 @@ export async function loadPeople(
         ? sql`(last_seen IS NULL OR last_seen < ${f.notSeenSince}::date)`
         : undefined,
       q
-        ? sql`(p.name || ' ' || p.father_name ILIKE ${`%${q}%`} OR p.code ILIKE ${`%${q}%`})`
+        ? sql`(p.name || ' ' || p.father_name ILIKE ${`%${q}%`} OR p.code ILIKE ${`%${q}%`} OR p.former_code ILIKE ${`%${q}%`})`
         : undefined,
     ].filter((c): c is SQL => !!c),
     sql` AND `,
@@ -139,7 +141,7 @@ export async function loadPeople(
              WHEN method IS DISTINCT FROM 'auto_close' THEN 1
              ELSE 2 END,
         checked_in_at ASC NULLS LAST,
-        on_member DESC
+        on_member ASC
     ),
     with_last AS (
       SELECT *,
@@ -161,11 +163,14 @@ export async function loadPeople(
     ),
     people AS (
       SELECT 'm' AS kind, m.id, m.member_id AS code, m.name, m.father_name,
-        m.department_id, m.status, coalesce(m.status = 'Active', FALSE) AS active
+        m.department_id, m.status, coalesce(m.status = 'Active', FALSE) AS active,
+        fp.code AS former_code
       FROM members m
+      LEFT JOIN pre_members fp
+        ON fp.promoted_member_id = m.id AND fp.status = 'promoted'
       UNION ALL
       SELECT 'p', x.id, x.code, x.name, x.father_name,
-        NULL, x.status, x.status = 'active'
+        NULL, x.status, x.status = 'active', NULL
       FROM pre_members x
       WHERE x.status IN ('active', 'withdrawn')
     ),

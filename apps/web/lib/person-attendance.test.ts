@@ -150,7 +150,20 @@ describe('personTimeline / personTotals', () => {
     assert.equal(t.lastSeen, '2026-10-18');
   });
 
-  it('prefers a marked absent over the close and the member row on a tie', () => {
+  it('on a tie keeps the pre-member row (closed before the promotion)', () => {
+    // Closed while both records were active: two automatic absents.
+    const e = ev('2026-11-01', { audience: 'everyone' });
+    const entries = personTimeline({
+      rows: [row(e, 'absent'), row(e, 'absent', { on: 'pre_member' })],
+      openEvents: [],
+      promoted: true,
+    });
+    assert.equal(entries.length, 1);
+    assert.equal(entries[0].beforeMembership, true);
+    assert.equal(personTotals(entries).expected, 1);
+  });
+
+  it('prefers a marked absent over the close', () => {
     const e = ev('2026-11-01', { audience: 'everyone' });
     const [entry] = personTimeline({
       rows: [
