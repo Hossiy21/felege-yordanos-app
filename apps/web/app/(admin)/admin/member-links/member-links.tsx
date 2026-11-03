@@ -2,13 +2,14 @@
 
 import { useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Check, Link2, Search, Unlink, X } from 'lucide-react';
+import { Check, Link2, MailCheck, MailX, Search, Unlink, X } from 'lucide-react';
 import { Card, Chip } from '@/components/ds';
 import { Input } from '@/components/ui/input';
 import { useToast } from '@/hooks/use-toast';
 import { useLocale, useT } from '@/lib/i18n/client';
 import { intlLocale } from '@/lib/i18n/config';
 import { MEMBER_ID_PREFIX } from '@/lib/member-id';
+import type { EmailMatch } from '@/lib/pre-member-match';
 import { cn } from '@/lib/utils';
 import { PreMemberBadge } from '@/components/pre-members/pre-member-badge';
 import {
@@ -30,6 +31,8 @@ export interface PendingRow {
   gender: string | null;
   /** The request is for a pre-member record (FYP code). */
   preMember: boolean;
+  /** Account email vs the pre-member record's; null = no record email. */
+  emailMatch: EmailMatch | null;
 }
 export interface UnlinkedRow {
   userId: string;
@@ -217,6 +220,27 @@ export function MemberLinks({
                     {r.gender && <> · {r.gender}</>}
                     {r.preMember && <PreMemberBadge className="ml-1.5" />}
                   </p>
+                  {r.emailMatch && (
+                    <p
+                      className={cn(
+                        'mt-1.5 inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold',
+                        r.emailMatch === 'match'
+                          ? 'bg-status-present-bg text-status-present'
+                          : 'bg-status-late-bg text-status-late',
+                      )}
+                    >
+                      {r.emailMatch === 'match' ? (
+                        <MailCheck className="h-3 w-3" />
+                      ) : (
+                        <MailX className="h-3 w-3" />
+                      )}
+                      {t(
+                        r.emailMatch === 'match'
+                          ? 'Email matches the record'
+                          : 'Different email',
+                      )}
+                    </p>
+                  )}
                 </div>
                 <div className="flex gap-2 md:justify-end">
                   <button

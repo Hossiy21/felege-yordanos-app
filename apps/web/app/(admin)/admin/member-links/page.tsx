@@ -11,6 +11,7 @@ import {
 import { Card, PageHead } from '@/components/ds';
 import { getT } from '@/lib/i18n/server';
 import { canApproveMemberLinks } from '@/lib/permissions';
+import { preMemberEmailMatch } from '@/lib/pre-member-match';
 import { requireUser } from '@/lib/session';
 import { MemberLinks } from './member-links';
 
@@ -64,6 +65,7 @@ export default async function MemberLinksPage() {
         userId: memberLinkRequests.userId,
         accountName: profiles.displayName,
         email: authUsers.email,
+        emailVerified: authUsers.emailVerified,
         memberId: members.memberId,
         name: members.name,
         fatherName: members.fatherName,
@@ -76,6 +78,8 @@ export default async function MemberLinksPage() {
         preFatherName: preMembers.fatherName,
         preGrandfatherName: preMembers.grandfatherName,
         prePhone: preMembers.phone,
+        // Only compared on the server: the badge goes to the client.
+        preEmail: preMembers.email,
       })
       .from(memberLinkRequests)
       .leftJoin(members, eq(members.id, memberLinkRequests.memberId))
@@ -142,6 +146,7 @@ export default async function MemberLinksPage() {
             phoneLast4: last4(preMember ? r.prePhone : r.phone),
             gender: r.gender,
             preMember,
+            emailMatch: preMember ? preMemberEmailMatch(r, r.preEmail) : null,
           };
         })}
         unlinked={unlinkedRows.map((r) => ({

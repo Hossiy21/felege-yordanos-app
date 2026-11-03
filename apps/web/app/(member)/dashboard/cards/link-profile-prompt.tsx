@@ -2,8 +2,15 @@ import Link from 'next/link';
 import { ArrowRight, Link2, MailCheck, type LucideIcon } from 'lucide-react';
 import { getLocale, getT } from '@/lib/i18n/server';
 import { cn } from '@/lib/utils';
+import { RequestSuggestedLink } from './request-suggested-link';
 
-/** Gold-accented card with an icon, a title, a short note and one button. */
+const ACTION_BTN =
+  'sacred-gradient inline-flex shrink-0 items-center gap-1.5 rounded-[10px] border border-gold/40 px-3.5 py-2 text-xs font-semibold tracking-[0.04em] text-cream shadow-[0_6px_16px_-6px_rgba(10,60,54,0.4),inset_0_1px_0_rgba(212,168,67,0.25)] transition-opacity hover:opacity-95 disabled:opacity-60';
+
+/**
+ * Gold-accented card with an icon, a title, a short note and one button:
+ * a link (`href` + `action`) or `button` in its place.
+ */
 async function PromptCard({
   className,
   icon: Icon,
@@ -11,13 +18,15 @@ async function PromptCard({
   notes,
   href,
   action,
+  button,
 }: {
   className?: string;
   icon: LucideIcon;
   title: string;
-  notes: string[];
+  notes: React.ReactNode[];
   href: string;
   action: string;
+  button?: React.ReactNode;
 }) {
   const locale = await getLocale();
   return (
@@ -44,19 +53,18 @@ async function PromptCard({
         >
           {title}
         </p>
-        {notes.map((note) => (
-          <p key={note} className="mt-0.5 text-[11.5px] leading-snug text-ink-muted">
+        {notes.map((note, i) => (
+          <p key={i} className="mt-0.5 text-[11.5px] leading-snug text-ink-muted">
             {note}
           </p>
         ))}
       </div>
-      <Link
-        href={href}
-        className="sacred-gradient inline-flex shrink-0 items-center gap-1.5 rounded-[10px] border border-gold/40 px-3.5 py-2 text-xs font-semibold tracking-[0.04em] text-cream shadow-[0_6px_16px_-6px_rgba(10,60,54,0.4),inset_0_1px_0_rgba(212,168,67,0.25)] transition-opacity hover:opacity-95"
-      >
-        {action}
-        <ArrowRight className="h-3 w-3 text-gold" />
-      </Link>
+      {button ?? (
+        <Link href={href} className={ACTION_BTN}>
+          {action}
+          <ArrowRight className="h-3 w-3 text-gold" />
+        </Link>
+      )}
     </section>
   );
 }
@@ -65,12 +73,38 @@ async function PromptCard({
 export async function LinkProfilePrompt({
   className,
   pending = false,
+  suggestedCode = null,
 }: {
   className?: string;
   /** An open link request is waiting for an admin. */
   pending?: boolean;
+  /** FYP ID of the pre-member record with this account's email (#139). */
+  suggestedCode?: string | null;
 }) {
   const t = await getT();
+  if (suggestedCode && !pending) {
+    return (
+      <PromptCard
+        className={className}
+        icon={Link2}
+        title={t('We found your ቅድመ አባል record')}
+        notes={[
+          <>
+            {t('Pre-member ID')}:{' '}
+            <span className="whitespace-nowrap font-mono text-ink">
+              {suggestedCode}
+            </span>
+          </>,
+          t('An admin confirms the link before it becomes active.'),
+        ]}
+        href="/claim"
+        action={t('Link')}
+        button={
+          <RequestSuggestedLink code={suggestedCode} className={ACTION_BTN} />
+        }
+      />
+    );
+  }
   return (
     <PromptCard
       className={className}
