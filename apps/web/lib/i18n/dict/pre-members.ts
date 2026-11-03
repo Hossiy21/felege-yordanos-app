@@ -22,6 +22,10 @@ export const preMembers: Record<string, string> = {
   Active: 'ንቁ',
   Promoted: 'ወደ አባልነት የተዛወረ',
   Withdrawn: 'የወጣ',
+  // Tags on an event's list (lib/event-people.ts)
+  'Now a member': 'አሁን አባል',
+  Inactive: 'ንቁ ያልሆነ',
+  'Not for this event': 'ለዚህ ዝግጅት አይደለም',
   'Withdrawn / Rejected': 'የወጡ / ውድቅ የተደረጉ',
   Approved: 'ጸድቋል',
   Reinstated: 'ተመልሷል',

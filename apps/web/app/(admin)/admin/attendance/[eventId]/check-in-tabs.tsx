@@ -21,10 +21,17 @@ import { useToast } from '@/hooks/use-toast';
 import { useLocale, useT } from '@/lib/i18n/client';
 import { formatYmd, hhmm } from '@/lib/events';
 import { eatDate, eatTime } from '@/lib/check-in-window';
-import type { Audience, ExpectedPerson } from '@/lib/audience';
+import { personKey, type Audience, type ExpectedPerson } from '@/lib/audience';
+import {
+  attendedOnList,
+  eventPeople,
+  type ListedPerson,
+  type RowPerson,
+} from '@/lib/event-people';
 import { MEMBER_ID_PREFIX } from '@/lib/member-id';
 import { classifyScanCode, scanLookupKey } from '@/lib/scan-code';
 import { PreMemberBadge } from '@/components/pre-members/pre-member-badge';
+import { OffListTag } from '@/components/events/off-list-tag';
 import { cn } from '@/lib/utils';
 import {
   clearAttendance,
@@ -43,13 +50,18 @@ import { QRScanner, type ScanResult } from './qr-scanner';
 
 type AttendanceStatus = 'present' | 'absent' | 'late';
 
-/** One person on the check-in list (member or pre-member). */
-export type CheckInMember = ExpectedPerson;
+/**
+ * One person on the check-in list (member or pre-member): expected, or with
+ * a row and tagged (lib/event-people.ts).
+ */
+export type CheckInMember = ListedPerson;
 
 export interface CheckInAttendance {
   /** Person key ("m:12", "p:3"; lib/audience.ts). */
   key: string;
   status: AttendanceStatus;
+  /** Who the row is for, as stored today. */
+  person: RowPerson;
 }
 
 /** The event being checked in (only display fields). */
@@ -63,8 +75,11 @@ export interface CheckInEvent {
 
 interface CheckInTabsProps {
   eventId: string;
-  /** Who is expected (lib/expected-people.ts), by name. */
-  people: CheckInMember[];
+  /**
+   * Who is expected (lib/expected-people.ts), by name. The screen lists these
+   * plus anyone with a row (lib/event-people.ts).
+   */
+  people: ExpectedPerson[];
   attendance: CheckInAttendance[];
   /** Who the event is for: decides the wording and the refusals. */
   audience: Audience;
@@ -213,7 +228,7 @@ type DeskEntry = 'quick' | 'qr' | 'list';
 
 export function CheckInTabs({
   eventId,
-  people: members,
+  people: expected,
   attendance,
   audience,
   event,
@@ -234,6 +249,16 @@ export function CheckInTabs({
       for (const a of attendance) map[a.key] = a.status;
       return map;
     },
+  );
+  // People with a row (from the page, then from each sync): they stay on
+  // the list even when no longer expected (promoted, withdrawn…).
+  const [rowPeople, setRowPeople] = useState<RowPerson[]>(() =>
+    attendance.map((a) => a.person),
+  );
+  const members = useMemo(
+    () =>
+      eventPeople({ audience, closed: false, expected, withRows: rowPeople }),
+    [audience, expected, rowPeople],
   );
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
@@ -288,10 +313,12 @@ export function CheckInTabs({
     deskQuickRef.current?.focus();
   }, []);
 
-  // Scanned or typed code -> person (member IDs and FYP codes).
+  // Scanned or typed code -> person (member IDs and FYP codes). Only the
+  // expected: a scan of someone tagged (promoted, withdrawn…) is refused.
   const membersByMemberId = useMemo(() => {
     const map = new Map<string, CheckInMember>();
-    for (const m of members) map.set(m.code.toLowerCase(), m);
+    for (const m of members)
+      if (!m.offList) map.set(m.code.toLowerCase(), m);
     return map;
   }, [members]);
   const findByCode = (input: string) => {
@@ -345,6 +372,9 @@ export function CheckInTabs({
       }
       // The server list is the truth: marks cleared here or on another
       // device drop out. Only this device's own newer or unsaved taps win.
+      const ownTap = (id: string) =>
+        inFlight.current.has(id) ||
+        (localEdits.current.get(id) ?? 0) >= startedAt;
       setRecords((prev) => {
         const next: Record<string, AttendanceStatus> = {};
         for (const a of res.data.rows) next[a.key] = a.status;
@@ -355,6 +385,16 @@ export function CheckInTabs({
         for (const [id, at] of localEdits.current)
           if (at >= startedAt) keep(id);
         for (const id of inFlight.current.keys()) keep(id);
+        return next;
+      });
+      // Same for the people with a row (the list follows the rows).
+      setRowPeople((prev) => {
+        const next = res.data.rows.map((a) => a.person);
+        const seen = new Set(res.data.rows.map((a) => a.key));
+        for (const p of prev) {
+          const key = personKey(p.kind, p.id);
+          if (!seen.has(key) && ownTap(key)) next.push(p);
+        }
         return next;
       });
     }
@@ -399,11 +439,10 @@ export function CheckInTabs({
     };
   }, [tab]);
 
+  // Only people on the list, so the counter and the list always agree.
   const presentCount = useMemo(
-    () =>
-      Object.values(records).filter((s) => s === 'present' || s === 'late')
-        .length,
-    [records],
+    () => attendedOnList(members, records),
+    [members, records],
   );
   const total = members.length;
   const progress = total ? Math.min(100, (presentCount / total) * 100) : 0;
@@ -931,7 +970,10 @@ export function CheckInTabs({
   };
 
   // Close event: department heads once the event has started, admins always.
-  const unmarkedCount = members.filter((m) => !records[m.key]).length;
+  // Tagged people without a mark are not marked absent by the close.
+  const unmarkedCount = members.filter(
+    (m) => !m.offList && !records[m.key],
+  ).length;
   const closeBtn = closableFrom !== null && now >= closableFrom && (
     <CloseEventButton
       eventId={eventId}
@@ -1273,6 +1315,7 @@ export function CheckInTabs({
                         <div className="mt-px flex items-center gap-1.5 font-mono text-[9.5px] text-ink-muted">
                           {m.code}
                           {m.kind === 'pre_member' && <PreMemberBadge />}
+                          {m.offList && <OffListTag reason={m.offList} />}
                         </div>
                       </div>
                       {statusButtons(m, 'md')}
@@ -1490,6 +1533,7 @@ export function CheckInTabs({
                         {fullName(m)}
                       </span>
                       {m.kind === 'pre_member' && <PreMemberBadge />}
+                      {m.offList && <OffListTag reason={m.offList} />}
                     </span>
                     {statusButtons(m, 'sm')}
                   </div>
