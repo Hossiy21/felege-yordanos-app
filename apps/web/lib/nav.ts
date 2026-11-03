@@ -12,6 +12,7 @@ import {
   User,
   UserCheck,
   Users,
+  UsersRound,
   type LucideIcon,
 } from 'lucide-react';
 import type { Role as UserRole } from '@felege-yordanos/db/schema';
@@ -23,6 +24,7 @@ import {
   canManageSongs,
   canManageUsers,
   canReviewDonations,
+  canViewPeople,
 } from './permissions';
 
 /**
@@ -94,6 +96,13 @@ export const ADMIN_NAV: NavItem[] = [
     matchNested: true,
   },
   {
+    href: '/admin/people',
+    labelEn: 'People',
+    labelAm: 'ሰዎች',
+    icon: UsersRound,
+    matchNested: true,
+  },
+  {
     href: '/admin/notices',
     labelEn: 'Notices',
     labelAm: 'ማስታወቂያዎች',
@@ -158,6 +167,7 @@ const ADMIN_NAV_RULES: Record<string, (u: NavUser) => boolean> = {
   '/admin': canAccessAdmin,
   '/admin/attendance': canAccessAdmin,
   '/admin/check-in': canAccessAdmin,
+  '/admin/people': canViewPeople,
   '/admin/notices': canManageNotices,
   '/admin/songs': canManageSongs,
   '/admin/donations': canReviewDonations,

@@ -1,18 +1,18 @@
-import { and, asc, desc, eq, gte, inArray } from 'drizzle-orm';
-import {
-  attendance,
-  db,
-  departments,
-  events,
-  members,
-  preMembers,
-} from '@felege-yordanos/db/server';
+import { and, asc, gte, inArray } from 'drizzle-orm';
+import { db, events } from '@felege-yordanos/db/server';
 import { Link2 } from 'lucide-react';
 import Link from 'next/link';
 import { Card, PageHead } from '@/components/ds';
+import { PersonAttendanceSection } from '@/components/people/person-attendance-section';
 import { deptShortLabel, hhmm, todayYmd } from '@/lib/events';
 import { getLocale, getT } from '@/lib/i18n/server';
-import { visibleAudiences } from '@/lib/permissions';
+import { loadOwnRecord, loadPersonTimeline } from '@/lib/people-queries';
+import {
+  personTotals,
+  withoutStaffColumns,
+  type TimelineStatus,
+} from '@/lib/person-attendance';
+import { canViewPersonAttendance, visibleAudiences } from '@/lib/permissions';
 import { requireMemberOrPreMember } from '@/lib/session';
 import { cn } from '@/lib/utils';
 import { primaryBtn } from '@/components/events/button-classes';
@@ -22,33 +22,30 @@ import {
   type AttnStatus,
 } from './attendance-view';
 
-export default async function MyAttendancePage() {
+const CALENDAR_STATUS: Record<TimelineStatus, AttnStatus> = {
+  on_time: 'present',
+  no_time: 'present',
+  late: 'late',
+  absent: 'absent',
+  not_marked: 'not_marked',
+};
+
+export default async function MyAttendancePage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
   // Plain members need a linked member record, pre-members an active
   // pre-member record; staff may still open the page.
   const user = await requireMemberOrPreMember();
-  const t = await getT();
-  const locale = await getLocale();
+  const [t, locale, sp] = await Promise.all([getT(), getLocale(), searchParams]);
   const audiences = visibleAudiences(user);
 
-  // The record linked to this login (through the /claim flow): a member, or
-  // an active pre-member (their attendance rows are on pre_member_id).
-  const [linkedMember] = await db
-    .select({ id: members.id, memberId: members.memberId })
-    .from(members)
-    .where(eq(members.authUserId, user.id))
-    .limit(1);
-  const [linkedPre] =
-    !linkedMember && user.preMemberRecordId !== null
-      ? await db
-          .select({ id: preMembers.id, memberId: preMembers.code })
-          .from(preMembers)
-          .where(eq(preMembers.id, user.preMemberRecordId))
-          .limit(1)
-      : [];
-  const member = linkedMember ?? (linkedPre?.memberId ? linkedPre : null);
-  const ownRows = linkedMember
-    ? eq(attendance.memberId, linkedMember.id)
-    : eq(attendance.preMemberId, linkedPre?.id ?? 0);
+  // The record linked to this login (through the /claim flow): a member
+  // (with their pre-member history, if promoted), or an active pre-member.
+  const own = await loadOwnRecord(user);
+  const member =
+    own && own.code && canViewPersonAttendance(user, own) ? own : null;
 
   if (!member) {
     return (
@@ -78,19 +75,9 @@ export default async function MyAttendancePage() {
 
   const today = todayYmd();
 
-  const [attendanceRecords, departmentRows, upcomingData] = await Promise.all([
-    // Only the signed-in user's own records.
-    db
-      .select({
-        id: attendance.id,
-        status: attendance.status,
-        events: events,
-      })
-      .from(attendance)
-      .innerJoin(events, eq(events.id, attendance.eventId))
-      .where(ownRows)
-      .orderBy(desc(attendance.createdAt)),
-    db.select().from(departments).orderBy(asc(departments.id)),
+  const [timeline, upcomingData] = await Promise.all([
+    // Only the signed-in user's own records, without the staff-only columns.
+    loadPersonTimeline(member, today).then(withoutStaffColumns),
     // Next event for this user's audience (staff: any).
     db
       .select()
@@ -103,24 +90,19 @@ export default async function MyAttendancePage() {
               inArray(events.audience, audiences),
             ),
       )
-      .orderBy(asc(events.eventDate))
+      .orderBy(asc(events.eventDate), asc(events.startTime))
       .limit(1),
   ]);
+  const totals = personTotals(timeline);
 
-  const deptLabel = (id: number | null) =>
-    departmentRows.some((d) => d.id === id)
-      ? deptShortLabel(id, locale)
-      : deptShortLabel(null, locale);
-
-  // The signed-in member's attendance records.
-  const rows: AttnRow[] = attendanceRecords.map((r) => ({
-    id: r.events.id,
-    title: r.events.title,
-    dept: deptLabel(r.events.departmentId),
-    date: r.events.eventDate,
-    time: hhmm(r.events.startTime),
-    end: hhmm(r.events.endTime),
-    status: (r.status as AttnStatus) ?? 'absent',
+  const rows: AttnRow[] = timeline.map((e) => ({
+    id: e.eventId,
+    title: e.title,
+    dept: deptShortLabel(e.departmentId, locale),
+    date: e.eventDate,
+    time: hhmm(e.startTime),
+    end: '',
+    status: CALENDAR_STATUS[e.status],
   }));
 
   const next = upcomingData[0];
@@ -129,16 +111,16 @@ export default async function MyAttendancePage() {
         title: next.title,
         date: next.eventDate,
         time: hhmm(next.startTime),
-        dept: deptLabel(next.departmentId),
+        dept: deptShortLabel(next.departmentId, locale),
       }
     : null;
 
-  // The next event is listed as "upcoming" unless it already has a record.
+  // The next event is on the calendar as "upcoming" unless it already is.
   if (next && !rows.some((r) => r.id === next.id)) {
     rows.push({
       id: next.id,
       title: next.title,
-      dept: deptLabel(next.departmentId),
+      dept: deptShortLabel(next.departmentId, locale),
       date: next.eventDate,
       time: hhmm(next.startTime),
       end: hhmm(next.endTime),
@@ -146,17 +128,22 @@ export default async function MyAttendancePage() {
     });
   }
 
-  // Most recent first by event date (the query returns them by record time).
-  rows.sort(
-    (a, b) => b.date.localeCompare(a.date) || b.time.localeCompare(a.time),
-  );
-
   return (
     <AttendanceView
       rows={rows}
+      attended={totals.attended}
+      expected={totals.expected}
+      history={
+        <PersonAttendanceSection
+          person={member}
+          searchParams={sp}
+          staff={false}
+          timeline={timeline}
+        />
+      }
       nextEvent={nextEvent}
-      memberId={member.memberId}
-      preMember={!linkedMember}
+      memberId={member.code}
+      preMember={member.kind === 'pre_member'}
     />
   );
 }
