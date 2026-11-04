@@ -71,15 +71,21 @@ function StatusRow({
 export function ClaimForm({
   state,
   required,
+  suggestedCode = null,
 }: {
   state: ClaimState;
   required: boolean;
+  /** FYP ID of the pre-member record with this account's email (#139). */
+  suggestedCode?: string | null;
 }) {
-  const [memberId, setMemberId] = useState('');
+  const [memberId, setMemberId] = useState(suggestedCode ?? '');
   const [type, setType] = useState<ClaimType>(
-    state.kind === 'rejected' && state.preMember ? 'pre_member' : 'member',
+    suggestedCode || (state.kind === 'rejected' && state.preMember)
+      ? 'pre_member'
+      : 'member',
   );
   const pre = type === 'pre_member';
+  const suggested = pre && !!suggestedCode;
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const router = useRouter();
@@ -229,7 +235,7 @@ export function ClaimForm({
             aria-checked={type === key}
             onClick={() => {
               setType(key);
-              setMemberId('');
+              setMemberId(key === 'pre_member' ? (suggestedCode ?? '') : '');
               setError('');
             }}
             className={cn(
@@ -255,7 +261,16 @@ export function ClaimForm({
           <Link2 className="h-4 w-4" />
         </div>
         <p className="text-[12.5px] leading-relaxed text-ink-muted">
-          {pre
+          {suggested && (
+            <span className="mb-0.5 block text-sm font-semibold text-brand-ink">
+              {t('We found your ቅድመ አባል record')}
+            </span>
+          )}
+          {suggested
+            ? t(
+                'Your email matches a pre-member record. Send the request below; an admin confirms the link before it becomes active.',
+              )
+            : pre
             ? t(
                 'Enter the pre-member ID you received by email, for example FYP-2019-0001. An admin confirms the link before it becomes active.',
               )
