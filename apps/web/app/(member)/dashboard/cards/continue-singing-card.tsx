@@ -13,7 +13,7 @@ export interface SongbookPreviewSong {
   audioKey: string | null;
 }
 
-/** Right-column card showing this signed-in user's recently opened songs. */
+/** Shows the signed-in user's recently opened songs. */
 export async function SongbookPreviewCard({
   songs,
 }: {
@@ -23,7 +23,7 @@ export async function SongbookPreviewCard({
   return (
     <Card>
       <div className="mb-2.5 flex items-center justify-between gap-3">
-        <SectionHeader en="From the songbook" am="ከመዝሙር መጽሐፍ" />
+        <SectionHeader en="Recently opened" am="በቅርብ የከፈቷቸው" />
         <Link
           href="/songbook"
           className="inline-flex shrink-0 items-center gap-1 text-[11px] font-semibold text-gold-deep hover:underline"

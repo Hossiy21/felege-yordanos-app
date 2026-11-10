@@ -23,6 +23,7 @@ const SECTIONS: LegalSection[] = [
         'Account: your name, email address and password. The password is stored only in hashed form, so nobody can read it. When you sign in, we store the session with your IP address and browser type.',
         "Member record: the membership details the Sunday School register already holds and links to your account: names (including father's, grandfather's and mother's names, and baptismal name), gender, birth date, marital status, church of baptism, address and phone numbers, education, work, service and award history.",
         'Attendance: whether you were present, late or absent at services and events.',
+        'Songbook: the songs you open and when you last opened each one, so we can show your recent songs.',
         'Donations: the amount, payment method, notes, the receipt image you upload, and whether the donation was verified or rejected.',
         'Google sign-in (coming soon): if you choose to sign in with Google, we receive your name, email address and profile picture from your Google account (the openid, email and profile scopes only). We never receive your Google password.',
       ],

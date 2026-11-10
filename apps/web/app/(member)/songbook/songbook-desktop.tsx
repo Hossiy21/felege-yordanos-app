@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Printer, Search } from 'lucide-react';
 import type {
   categories as categoriesTable,
@@ -18,7 +18,7 @@ import {
   songNumber,
 } from '@/lib/category-color';
 import { LyricsCard } from './lyrics';
-import { recordSongView } from './actions';
+import { recordOpenedSong } from '@/components/song-history-refresh';
 
 type Song = typeof songsTable.$inferSelect;
 type Category = typeof categoriesTable.$inferSelect;
@@ -55,19 +55,6 @@ export function SongbookDesktop({
   const selected =
     songs.find((s) => s.id === selectedId) ?? filtered[0] ?? songs[0] ?? null;
   const audioSrc = selected ? songAudioSrc(selected) : null;
-  const viewedSongId = selected?.id;
-
-  useEffect(() => {
-    if (!viewedSongId) return;
-
-    const desktop = window.matchMedia('(min-width: 768px)');
-    const recordIfVisible = () => {
-      if (desktop.matches) void recordSongView(viewedSongId);
-    };
-    recordIfVisible();
-    desktop.addEventListener('change', recordIfVisible);
-    return () => desktop.removeEventListener('change', recordIfVisible);
-  }, [viewedSongId]);
 
   return (
     <div className={className}>
@@ -141,7 +128,10 @@ export function SongbookDesktop({
                 <button
                   key={song.id}
                   type="button"
-                  onClick={() => setSelectedId(song.id)}
+                  onClick={() => {
+                    setSelectedId(song.id);
+                    recordOpenedSong(song.id);
+                  }}
                   aria-current={active ? 'true' : undefined}
                   className={cn(
                     'mb-0.5 flex w-full items-center gap-2.5 rounded-[10px] px-2.5 py-2.5 text-left transition-colors',

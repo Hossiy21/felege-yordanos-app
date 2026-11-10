@@ -9,7 +9,7 @@ import { cn } from '@/lib/utils';
 import { LegalFooter } from './auth-ui';
 
 /** Shown on /privacy and /terms. Change it whenever their text changes. */
-export const LEGAL_EFFECTIVE_DATE = '2026-10-10';
+export const LEGAL_EFFECTIVE_DATE = '2026-11-10';
 
 /** A paragraph, or a bulleted list. English text; Amharic is in lib/i18n/dict/legal.ts. */
 export type LegalBlock = string | string[];

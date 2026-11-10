@@ -1,6 +1,7 @@
 import { adminHrefsFor } from '@/lib/nav';
 import { AppShell } from '@/components/app-shell';
 import { requireUser } from '@/lib/session';
+import { SongHistoryRefresh } from '@/components/song-history-refresh';
 
 export default async function MemberLayout({
   children,
@@ -17,6 +18,7 @@ export default async function MemberLayout({
       adminHrefs={adminHrefsFor(user)}
       preMember={user.access === 'pre_member'}
     >
+      <SongHistoryRefresh />
       {children}
     </AppShell>
   );

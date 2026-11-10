@@ -18,6 +18,7 @@ PostgreSQL 17 with Drizzle ORM. Everything lives in `libs/db`:
 | profiles | one per login: role, department, display name |
 | members, member_types, member_jobs, member_academic_education, member_spiritual_education | parish member register |
 | categories, songs | songbook |
+| song_views | the latest time each user opened each song; used for recently opened songs on the dashboard |
 | events, attendance | events (incl. recurring series) and check-ins; `events.audience` = `members` (default) / `pre_members` / `everyone`; an attendance row has exactly one of `member_id` / `pre_member_id` |
 | pre_members | ቅድመ አባላት: people learning at the school without an SSU ID. Own table (never rows in `members`). `code` = `FYP-<Ethiopian year>-<4 digits>`, set on approval; status `pending` / `active` / `rejected` / `withdrawn` / `promoted`; promotion: `promoted_member_id`, `promoted_at`, `promoted_by`, `promotion_linked_account` |
 | pre_member_id_counters | last FYP number per Ethiopian year (incremented inside the approval transaction) |

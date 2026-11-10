@@ -1,13 +1,11 @@
 'use client';
 
 import { useEffect } from 'react';
-import { recordSongView } from './actions';
+import { recordOpenedSong } from '@/components/song-history-refresh';
 
 export function RecordSongView({ songId }: { songId: string }) {
   useEffect(() => {
-    void recordSongView(songId).catch((error) => {
-      console.error('[song views] record failed:', error);
-    });
+    recordOpenedSong(songId);
   }, [songId]);
 
   return null;

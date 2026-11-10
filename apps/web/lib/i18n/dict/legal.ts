@@ -32,6 +32,8 @@ export const legal: Record<string, string> = {
     'የአባል መዝገብ፦ የሰንበት ትምህርት ቤቱ መዝገብ አስቀድሞ የያዘውና ከመለያዎ ጋር የሚያገናኘው የአባልነት መረጃ፦ ስሞች (የአባት፣ የአያት፣ የእናት ስም እና የክርስትና ስም ጨምሮ)፣ ጾታ፣ የትውልድ ቀን፣ የጋብቻ ሁኔታ፣ የተጠመቁበት ቤተ ክርስቲያን፣ አድራሻ እና ስልክ ቁጥሮች፣ የትምህርት፣ የሥራ፣ የአገልግሎት እና የሽልማት ታሪክ።',
   'Attendance: whether you were present, late or absent at services and events.':
     'መገኘት፦ በአገልግሎቶችና በዝግጅቶች ላይ መገኘትዎ፣ መዘግየትዎ ወይም መቅረትዎ።',
+  'Songbook: the songs you open and when you last opened each one, so we can show your recent songs.':
+    'መዝሙር መጽሐፍ፦ በቅርብ የከፈቷቸውን መዝሙሮች ለማሳየት፣ የሚከፍቷቸውን መዝሙሮች እና እያንዳንዳቸውን መጨረሻ የከፈቱበትን ጊዜ እናስቀምጣለን።',
   'Donations: the amount, payment method, notes, the receipt image you upload, and whether the donation was verified or rejected.':
     'መዋጮ፦ መጠኑ፣ የክፍያ ዘዴው፣ ማስታወሻ፣ የሚጭኑት የደረሰኝ ምስል እና መዋጮው መረጋገጡ ወይም ውድቅ መደረጉ።',
   'Google sign-in (coming soon): if you choose to sign in with Google, we receive your name, email address and profile picture from your Google account (the openid, email and profile scopes only). We never receive your Google password.':
