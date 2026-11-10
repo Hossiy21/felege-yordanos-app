@@ -22,6 +22,10 @@ export const preMembers: Record<string, string> = {
   Active: 'ንቁ',
   Promoted: 'ወደ አባልነት የተዛወረ',
   Withdrawn: 'የወጣ',
+  // Tags on an event's list (lib/event-people.ts)
+  'Now a member': 'አሁን አባል',
+  Inactive: 'ንቁ ያልሆነ',
+  'Not for this event': 'ለዚህ ዝግጅት አይደለም',
   'Withdrawn / Rejected': 'የወጡ / ውድቅ የተደረጉ',
   Approved: 'ጸድቋል',
   Reinstated: 'ተመልሷል',
@@ -145,6 +149,14 @@ export const preMembers: Record<string, string> = {
   'I am a member': 'አባል ነኝ',
   'I am a ቅድመ አባል': 'ቅድመ አባል ነኝ',
   'Requested pre-member ID': 'የተጠየቀው የቅድመ አባል መታወቂያ',
+  // Same email as a pre-member record (#139)
+  'We found your ቅድመ አባል record': 'የቅድመ አባልነት መዝገብዎ ተገኝቷል',
+  'Your email matches a pre-member record. Send the request below; an admin confirms the link before it becomes active.':
+    'ኢሜይልዎ ከአንድ የቅድመ አባል መዝገብ ጋር ይመሳሰላል። ከታች ጥያቄውን ይላኩ፤ ግንኙነቱ ከመሥራቱ በፊት አስተዳዳሪ ያረጋግጣል።',
+  'An admin confirms the link before it becomes active.':
+    'ግንኙነቱ ከመሥራቱ በፊት አስተዳዳሪ ያረጋግጣል።',
+  'Email matches the record': 'ኢሜይሉ ከመዝገቡ ጋር ይመሳሰላል',
+  'Different email': 'የተለየ ኢሜይል',
   'Enter the pre-member ID you received by email, for example FYP-2019-0001. An admin confirms the link before it becomes active.':
     'በኢሜይል የደረሰዎትን የቅድመ አባል መታወቂያ ያስገቡ፤ ለምሳሌ FYP-2019-0001። ግንኙነቱ ከመሥራቱ በፊት አስተዳዳሪ ያረጋግጣል።',
   'An admin will confirm it soon. Your events and notices open once it is approved.':

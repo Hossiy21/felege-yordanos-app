@@ -11,6 +11,8 @@ import {
   hasPreMemberAccess,
   canReopenEvent,
   canViewEventSummary,
+  canViewPeople,
+  canViewPersonAttendance,
   closableFrom,
 } from './permissions';
 
@@ -119,5 +121,31 @@ describe('pre-member access', () => {
     assert.equal(canManagePreMembers(head), false);
     assert.equal(canManagePreMembers(programsHead), false);
     assert.equal(canManagePreMembers(member), false);
+  });
+});
+
+describe('canViewPeople / canViewPersonAttendance', () => {
+  const superAdmin = { id: 's', role: 'super_admin' as const, departmentId: null };
+  // A plain member account in Programs & Events: no admin area.
+  const programsMember = { id: 'pm', role: 'member' as const, departmentId: 3 };
+
+  it('the list is for admins and Programs & Events staff', () => {
+    assert.equal(canViewPeople(admin), true);
+    assert.equal(canViewPeople(superAdmin), true);
+    assert.equal(canViewPeople(programsHead), true);
+    assert.equal(canViewPeople(head), false);
+    assert.equal(canViewPeople(member), false);
+    assert.equal(canViewPeople(programsMember), false);
+  });
+
+  it('everyone sees their own page, only staff see others', () => {
+    const own = { authUserId: 'm' };
+    const other = { authUserId: 'x' };
+    assert.equal(canViewPersonAttendance(member, own), true);
+    assert.equal(canViewPersonAttendance(member, other), false);
+    assert.equal(canViewPersonAttendance(member, { authUserId: null }), false);
+    assert.equal(canViewPersonAttendance(head, other), false);
+    assert.equal(canViewPersonAttendance(programsHead, other), true);
+    assert.equal(canViewPersonAttendance(admin, { authUserId: null }), true);
   });
 });

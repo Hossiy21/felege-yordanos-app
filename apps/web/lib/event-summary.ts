@@ -8,6 +8,7 @@
  * attended but are left out of every time-based number.
  */
 import type { PersonKind } from './audience';
+import type { OffListReason } from './event-people';
 import { checkInWindow, eventStartAt } from './check-in-window';
 
 export type TappedStatus = 'present' | 'late' | 'absent';
@@ -30,7 +31,7 @@ export interface SummaryEventInput {
   checkInClosesAfterMin: number;
 }
 
-/** One person on the event's list (lib/expected-people.ts). */
+/** One person on the event's list (lib/event-people.ts). */
 export interface SummaryMemberInput {
   /** "m:<members.id>" or "p:<pre_members.id>" (lib/audience.ts). */
   key: string;
@@ -39,6 +40,8 @@ export interface SummaryMemberInput {
   code: string;
   name: string;
   fatherName: string;
+  /** Not expected any more (promoted, withdrawn, …): a tag in the table. */
+  offList?: OffListReason | null;
 }
 
 export interface SummaryRowInput {
@@ -57,6 +60,7 @@ export interface SummaryRecord {
   /** ID shown: SSU member ID or FYP code. */
   memberId: string;
   name: string;
+  offList: OffListReason | null;
   status: SummaryStatus;
   /** What the volunteer tapped (null without a row). */
   tapped: TappedStatus | null;
@@ -132,6 +136,19 @@ export function minutesVsStart(at: Date, start: Date): number {
   return Math.round(diff / MINUTE_MS) || 0;
 }
 
+/**
+ * Status of an attended row from its time: late after the start (no grace
+ * period), on time at or before it, no_time for rows marked before times
+ * were recorded. The one lateness rule (summary and person pages).
+ */
+export function attendedStatus(
+  checkedInAt: Date | null,
+  start: Date,
+): 'on_time' | 'late' | 'no_time' {
+  if (!checkedInAt) return 'no_time';
+  return checkedInAt.getTime() > start.getTime() ? 'late' : 'on_time';
+}
+
 const fullName = (m: SummaryMemberInput) =>
   [m.name, m.fatherName].filter(Boolean).join(' ');
 
@@ -205,6 +222,7 @@ export function computeEventSummary(
       kind: m.kind,
       memberId: m.code,
       name: fullName(m),
+      offList: m.offList ?? null,
       tapped: row?.status ?? null,
       method: row?.method ?? null,
     };
@@ -232,7 +250,7 @@ export function computeEventSummary(
         minutesVsStart: null,
       };
     }
-    const late = row.checkedInAt.getTime() > start.getTime();
+    const late = attendedStatus(row.checkedInAt, start) === 'late';
     return {
       ...base,
       status: late ? 'late' : 'on_time',

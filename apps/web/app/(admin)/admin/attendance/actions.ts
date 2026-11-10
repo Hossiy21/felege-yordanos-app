@@ -13,12 +13,9 @@ import {
   preMembers,
   RECURRENCES,
 } from '@felege-yordanos/db/server';
-import {
-  attendanceRowKey,
-  audienceIncludes,
-  parsePersonKey,
-} from '@/lib/audience';
-import { insertAutoAbsents } from '@/lib/expected-people';
+import { audienceIncludes, parsePersonKey } from '@/lib/audience';
+import { insertAutoAbsents, loadAttendanceRows } from '@/lib/expected-people';
+import type { RowPerson } from '@/lib/event-people';
 import { parsePreMemberCode } from '@/lib/pre-members';
 import { fail, NOT_ALLOWED, ok, type ActionResult } from '@/lib/action-result';
 import {
@@ -429,6 +426,26 @@ async function personRefusal(
   return row.status === 'active' ? null : preMemberRefusal(row.status);
 }
 
+/** This person already has an attendance row at this event. */
+async function hasAttendanceRow(
+  eventId: string,
+  person: { kind: 'member' | 'pre_member'; id: number },
+): Promise<boolean> {
+  const [row] = await db
+    .select({ id: attendance.id })
+    .from(attendance)
+    .where(
+      and(
+        eq(attendance.eventId, eventId),
+        person.kind === 'member'
+          ? eq(attendance.memberId, person.id)
+          : eq(attendance.preMemberId, person.id),
+      ),
+    )
+    .limit(1);
+  return !!row;
+}
+
 /** Message for a pre-member who may not check in (by status). */
 function preMemberRefusal(status: string): string {
   switch (status) {
@@ -475,10 +492,17 @@ export async function markAttendance(input: {
   const refused = checkInRefusal(user, event);
   if (refused) return fail(refused);
   const person = parsed.data.personKey;
-  const notExpected = await personRefusal(event, person);
-  if (notExpected) return fail(notExpected);
-
   const { status, method } = parsed.data;
+  const notExpected = await personRefusal(event, person);
+  // People no longer expected who already have a row stay on the list
+  // (lib/event-people.ts): their mark can still be changed from the list.
+  // Scans and Quick ID keep refusing them.
+  if (
+    notExpected &&
+    !(method === 'list' && (await hasAttendanceRow(event.id, person)))
+  )
+    return fail(notExpected);
+
   const attended = status !== 'absent';
   // Already present or late: keep the time and how it was made.
   const wasAttended = sql`${attendance.status} IN ('present', 'late')`;
@@ -561,8 +585,9 @@ export async function clearAttendance(input: {
 }
 
 /**
- * Current attendance of one event (person key + status only), for the
- * check-in screen to sync with other devices without reloading the page.
+ * Current attendance of one event (person key, status and the person), for
+ * the check-in screen to sync with other devices without reloading the page.
+ * The person lets the screen list everyone with a row (lib/event-people.ts).
  * Permission: canViewEventAttendance(user, event), same as the page.
  */
 export async function getEventAttendance(id: string): Promise<
@@ -570,6 +595,7 @@ export async function getEventAttendance(id: string): Promise<
     rows: {
       key: string;
       status: (typeof ATTENDANCE_STATUSES)[number];
+      person: RowPerson;
     }[];
     /** Closed since the page loaded: the screen reloads into the summary. */
     closed: boolean;
@@ -582,16 +608,9 @@ export async function getEventAttendance(id: string): Promise<
   if (!event) return fail('Event not found.');
   if (!canViewEventAttendance(user, event)) return fail(NOT_ALLOWED);
 
-  const rows = await db
-    .select({
-      memberId: attendance.memberId,
-      preMemberId: attendance.preMemberId,
-      status: attendance.status,
-    })
-    .from(attendance)
-    .where(eq(attendance.eventId, event.id));
+  const rows = await loadAttendanceRows(event.id);
   return ok({
-    rows: rows.map((r) => ({ key: attendanceRowKey(r), status: r.status })),
+    rows: rows.map((r) => ({ key: r.key, status: r.status, person: r.person })),
     closed: event.closedAt !== null,
   });
 }

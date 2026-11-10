@@ -1,13 +1,8 @@
-import { desc, eq } from 'drizzle-orm';
+import { desc } from 'drizzle-orm';
 import Link from 'next/link';
 import { DoorOpen, Lock } from 'lucide-react';
-import {
-  attendance as attendanceTable,
-  db,
-  events as eventsTable,
-} from '@felege-yordanos/db/server';
-import { attendanceRowKey } from '@/lib/audience';
-import { loadExpectedPeople } from '@/lib/expected-people';
+import { db, events as eventsTable } from '@felege-yordanos/db/server';
+import { loadAttendanceRows, loadExpectedPeople } from '@/lib/expected-people';
 import { PageHead } from '@/components/ds';
 import { checkInWindow } from '@/lib/check-in-window';
 import { todayYmd } from '@/lib/events';
@@ -65,17 +60,11 @@ export default async function CheckInHubPage({
     !!selectedEvent && canViewEventAttendance(user, selectedEvent);
   let attendance: CheckInAttendance[] = [];
   if (selectedEvent && canView) {
-    const rows = await db
-      .select({
-        memberId: attendanceTable.memberId,
-        preMemberId: attendanceTable.preMemberId,
-        status: attendanceTable.status,
-      })
-      .from(attendanceTable)
-      .where(eq(attendanceTable.eventId, selectedEvent.id));
+    const rows = await loadAttendanceRows(selectedEvent.id);
     attendance = rows.map((r) => ({
-      key: attendanceRowKey(r),
+      key: r.key,
       status: r.status,
+      person: r.person,
     }));
   }
 
@@ -130,7 +119,8 @@ export default async function CheckInHubPage({
 
   if (selectedEvent) {
     const times = checkInWindow(selectedEvent);
-    // Who is expected depends on the event's audience.
+    // Who is expected depends on the event's audience; the screen adds
+    // anyone with a row (lib/event-people.ts).
     const people = await loadExpectedPeople(selectedEvent);
     return (
       <CheckInTabs

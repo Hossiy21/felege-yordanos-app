@@ -6,6 +6,7 @@ import {
   preMembers,
 } from '@felege-yordanos/db/server';
 import { PageHead } from '@/components/ds';
+import { suggestedPreMemberCodeFor } from '@/lib/pre-member-match-queries';
 import { requireVerifiedEmail } from '@/lib/session';
 import { ClaimForm, type ClaimState } from './claim-form';
 
@@ -78,6 +79,12 @@ export default async function ClaimPage({
     }
   }
 
+  // Same email as one active pre-member record: offer its FYP ID (#139).
+  const suggestedCode =
+    state.kind === 'none' || state.kind === 'rejected'
+      ? await suggestedPreMemberCodeFor(user)
+      : null;
+
   return (
     <div className="mx-auto max-w-md px-[22px] pb-6 pt-4 md:max-w-lg md:px-7 md:py-10">
       <PageHead
@@ -85,7 +92,11 @@ export default async function ClaimPage({
         am="የአባልነት መለያዎን ያገናኙ"
         className="mb-3.5 md:mb-4"
       />
-      <ClaimForm state={state} required={required === '1'} />
+      <ClaimForm
+        state={state}
+        required={required === '1'}
+        suggestedCode={suggestedCode}
+      />
     </div>
   );
 }

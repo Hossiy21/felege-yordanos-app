@@ -272,6 +272,23 @@ export const canViewEventSummary = (
   event: { departmentId: number | null },
 ) => canViewEventAttendance(u, event);
 
+/**
+ * The people list (/admin/people) and every person's attendance page: staff
+ * who read all attendance (admins, Programs & Events). Department heads get
+ * their own department's community later (#127).
+ */
+export const canViewPeople = (u: User) =>
+  canAccessAdmin(u) && canViewAllAttendance(u);
+
+/**
+ * One person's attendance (totals and timeline): canViewPeople, and everyone
+ * for themselves (the login linked to the member row or pre-member record).
+ */
+export const canViewPersonAttendance = (
+  u: User,
+  person: { authUserId: string | null },
+) => canViewPeople(u) || (!!u.id && person.authUserId === u.id);
+
 /* ─── Donations ────────────────────────────────────────────── */
 
 /** See all donations, verify or reject them, open any receipt. */

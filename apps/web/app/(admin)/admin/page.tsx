@@ -17,6 +17,7 @@ import {
   Sprout,
   UserCheck,
   Users,
+  UsersRound,
   Wallet,
 } from 'lucide-react';
 import Link from 'next/link';
@@ -66,6 +67,15 @@ const adminLinks: AdminLinkDef[] = [
     en: 'Check-in',
     description: 'Scan or mark members present for today’s gatherings.',
     cta: 'Start check-in',
+  },
+  {
+    href: '/admin/people',
+    icon: UsersRound,
+    am: 'ሰዎች',
+    en: 'People',
+    description:
+      'Attendance of each member and pre-member: who is coming, who stopped.',
+    cta: 'View people',
   },
   {
     href: '/admin/notices',
